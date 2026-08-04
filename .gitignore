@@ -1,0 +1,13 @@
+# 编译产物
+bio
+*.o
+
+# 旧单文件归档（源码已在 src/ 多模块）
+biolang.c.mono
+
+# 本地 Claude 配置
+.claude/
+
+# 系统/编辑器
+*.swp
+.DS_Store

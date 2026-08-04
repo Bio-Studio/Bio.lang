@@ -1,0 +1,86 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "BioLang",
+  "scopeName": "source.biolang",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#smartrefs"
+    },
+    {
+      "include": "#qualifiers"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#identifiers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "match": "//.*$",
+          "name": "comment.line.double-slash.biolang"
+        },
+        {
+          "begin": "/\\*",
+          "end": "\\*/",
+          "name": "comment.block.biolang"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "begin": "\"",
+          "end": "\"",
+          "name": "string.quoted.double.biolang"
+        }
+      ]
+    },
+    "numbers": {
+      "match": "\\b\\d+(\\.\\d+)?\\b",
+      "name": "constant.numeric.biolang"
+    },
+    "keywords": {
+      "match": "\\b(program|Stream|Class|Main|need|value|function|void|overwrite|ALL|res|ref|cause|new|const|thread|type|if|else|while|for|break|continue)\\b",
+      "name": "keyword.control.biolang"
+    },
+    "types": {
+      "match": "\\b(int|float|double|string|char)\\b",
+      "name": "storage.type.biolang"
+    },
+    "smartrefs": {
+      "match": "&\\s*(r|w|rw|m)\\s+[uaf]\\s+[A-Za-z_]\\w*",
+      "name": "variable.reference.biolang"
+    },
+    "qualifiers": {
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\s*::\\s*[A-Za-z_][A-Za-z0-9_]*",
+      "name": "entity.name.function.biolang"
+    },
+    "operators": {
+      "match": "::|==|!=|<=|>=|[-+*/=;,.(){}<>\\[\\]&]",
+      "name": "keyword.operator.biolang"
+    },
+    "identifiers": {
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b",
+      "name": "variable.other.biolang"
+    }
+  }
+}

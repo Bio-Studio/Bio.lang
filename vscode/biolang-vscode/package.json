@@ -1,0 +1,75 @@
+{
+  "name": "biolang",
+  "displayName": "BioLang",
+  "description": "BioLang 语言支持：语法高亮、代码片段、补全、运行命令（bio CLI）",
+  "version": "0.4.0",
+  "publisher": "bio",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onLanguage:biolang"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "biolang",
+        "aliases": [
+          "BioLang",
+          "biolang"
+        ],
+        "extensions": [
+          ".bl",
+          ".bio"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "biolang",
+        "scopeName": "source.biolang",
+        "path": "./syntaxes/biolang.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "biolang",
+        "path": "./snippets/biolang.code-snippets"
+      }
+    ],
+    "commands": [
+      {
+        "command": "biolang.runFile",
+        "title": "BioLang: 运行当前文件 (bio)"
+      },
+      {
+        "command": "biolang.runDemo",
+        "title": "BioLang: 运行内置演示"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "when": "resourceLangId == biolang",
+          "command": "biolang.runFile",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "biolang.runFile",
+          "when": "resourceLangId == biolang"
+        },
+        {
+          "command": "biolang.runDemo"
+        }
+      ]
+    }
+  }
+}

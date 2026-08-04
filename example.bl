@@ -1,0 +1,21 @@
+program main;
+
+const int True = 1;
+const int False = 0;
+
+Class Vector {
+    int x;
+    int y;
+    void __init__(x int, y int) {
+        this::x = x;
+        this::y = y;
+    }
+}
+
+Main {
+    void exec() {
+        Vector v = new Vector(1, 2);
+        CIO::print(v::x);
+        CIO::print(v::y);
+    }
+}
