@@ -1,4 +1,5 @@
 #include "bio.h"
+#include "platform.h"
 
 /* ═══════════════ Minimal TOML parser (for package.toml) ═══════════════
  * Supports: comments #, top-level name/version/repo, [dependencies] section,
@@ -169,7 +170,7 @@ const char *global_repo(void) {
     const char *cfgpath = getenv("BIOLANG_CONFIG");
     if (!cfgpath) {
         /* System default path (cross-platform): ~/.biolang/config.toml */
-        const char *home = getenv("HOME");
+        const char *home = bio_home();
         if (home) {
             static char p[1024];
             snprintf(p, sizeof p, "%s/.biolang/config.toml", home);

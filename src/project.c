@@ -1,7 +1,5 @@
 #include "bio.h"
-#include <dirent.h>
-#include <sys/stat.h>
-#include <sys/types.h>
+#include "platform.h"
 
 /* ═══════════════ project-based build & run ═══════════════
  * Project structure:
@@ -53,33 +51,37 @@ static int ends_with(const char *s, const char *suf) {
 }
 
 /* recursively collect all .bio/.bl files under dir and add them to the registry */
-static void scan_dir(const char *dir, const char *relbase) {
-    DIR *d = opendir(dir);
-    if (!d) return;
-    struct dirent *e;
-    while ((e = readdir(d))) {
-        if (e->d_name[0] == '.') continue;
-        char *p = join(dir, e->d_name);
-        struct stat st;
-        if (stat(p, &st) == 0 && S_ISDIR(st.st_mode)) {
-            scan_dir(p, relbase);
-        } else if (S_ISREG(st.st_mode) && (ends_with(e->d_name, ".bio") || ends_with(e->d_name, ".bl"))) {
-            char *content = read_whole(p);
-            if (!content) continue;
-            int ntok, err = 0;
-            Tok *toks = tokenize(content, &ntok);
-            Decl *decls = parse_program_tokens(toks, ntok, &err);
-            if (err) { fprintf(stderr, "⚠️ parse failed: %s\n", p); continue; }
-            ProjFile *f = aalloc(sizeof(ProjFile));
-            f->path = relbase ? join(relbase, e->d_name) : e->d_name;
-            f->content = content;
-            f->decls = decls;
-            f->included = 0;
-            f->next = files;
-            files = f;
-        }
+typedef struct { const char *relbase; } ScanCtx;
+
+static void scan_dir(const char *dir, const char *relbase);   /* forward (scan_cb recurses) */
+
+static void scan_cb(const char *path, int is_dir, void *ud) {
+    ScanCtx *c = ud;
+    const char *name = strrchr(path, '/');
+    name = name ? name + 1 : path;
+    if (is_dir) {
+        scan_dir(path, c->relbase);   /* recurse (same relbase, as before) */
+        return;
     }
-    closedir(d);
+    if (!(ends_with(name, ".bio") || ends_with(name, ".bl"))) return;
+    char *content = read_whole(path);
+    if (!content) return;
+    int ntok, err = 0;
+    Tok *toks = tokenize(content, &ntok);
+    Decl *decls = parse_program_tokens(toks, ntok, &err);
+    if (err) { fprintf(stderr, "⚠️ parse failed: %s\n", path); return; }
+    ProjFile *f = aalloc(sizeof(ProjFile));
+    f->path = c->relbase ? join(c->relbase, name) : name;
+    f->content = content;
+    f->decls = decls;
+    f->included = 0;
+    f->next = files;
+    files = f;
+}
+
+static void scan_dir(const char *dir, const char *relbase) {
+    ScanCtx c = { relbase };
+    bio_walk_dir(dir, scan_cb, &c);
 }
 
 /* ── provider / requirement recognition ── */
@@ -177,23 +179,14 @@ static ProjFile *find_entry(const char *dir) {
     return files;
 }
 
-static int mkdirs(const char *dir) {
-    char tmp[1024]; snprintf(tmp, sizeof tmp, "%s", dir);
-    for (char *p = tmp + 1; *p; p++) {
-        if (*p == '/') { *p = 0; mkdir(tmp, 0755); *p = '/'; }
-    }
-    mkdir(tmp, 0755);
-    return 0;
-}
-
 /* ── project commands ── */
 
 /* bio init <name>: create a project skeleton */
 int project_init(const char *name) {
-    mkdirs(name);
-    mkdirs(join(name, "src"));
-    mkdirs(join(name, "utils"));
-    mkdirs(join(name, ".biolang/deps"));
+    bio_mkdir_p(name);
+    bio_mkdir_p(join(name, "src"));
+    bio_mkdir_p(join(name, "utils"));
+    bio_mkdir_p(join(name, ".biolang/deps"));
     char *toml = join(name, "package.toml");
     FILE *f = fopen(toml, "w");
     if (!f) { fprintf(stderr, "cannot create %s\n", toml); return 1; }
@@ -269,6 +262,7 @@ int project_run(const char *dir) {
 }
 
 /* bio install [dir]: read dependencies from package.toml and fetch them by repo into .biolang/deps/<name>/ */
+/* git/curl run as direct processes (no shell); local paths copy with stdio. */
 int project_install(const char *dir) {
     char *toml = join(dir, "package.toml");
     TomlTable *t = toml_parse_file(toml);
@@ -285,22 +279,24 @@ int project_install(const char *dir) {
             idx++; continue;
         }
         char *depsroot = join(dir, ".biolang/deps");
-        mkdirs(depsroot);
+        bio_mkdir_p(depsroot);
         char *dest = join(depsroot, name);
-        char cmd[4096];
+        int rc;
         if (strncmp(repo, "http", 4) == 0 && strstr(repo, ".git")) {
             /* git repository */
-            snprintf(cmd, sizeof cmd, "git clone --depth 1 %s %s 2>/dev/null", repo, dest);
+            const char *argv[] = { "git", "clone", "--depth", "1", repo, dest, NULL };
+            rc = bio_run(argv);
         } else if (strncmp(repo, "http", 4) == 0) {
             /* http download (assumes repo points to package.toml; v1 simplifies to curl into dest/package.toml) */
-            mkdirs(dest);
-            snprintf(cmd, sizeof cmd, "curl -fsSL %s -o %s/package.toml 2>/dev/null", repo, dest);
+            bio_mkdir_p(dest);
+            char *outfile = join(dest, "package.toml");
+            const char *argv[] = { "curl", "-fsSL", repo, "-o", outfile, NULL };
+            rc = bio_run(argv);
         } else {
             /* local path */
-            mkdirs(dest);
-            snprintf(cmd, sizeof cmd, "cp -r %s/. %s/ 2>/dev/null", repo, dest);
+            rc = bio_copy_tree(repo, dest);
         }
-        if (system(cmd) != 0) {
+        if (rc != 0) {
             fprintf(stderr, "⛔ dep %s: fetch failed from %s\n", name, repo);
         } else {
             printf("✔ installed %s%s%s\n", name, ver ? " v" : "", ver ? ver : "");
@@ -313,9 +309,9 @@ int project_install(const char *dir) {
 
 /* bio destroy [dir]: delete build artifacts (.biolang/ and the app executable, keep source) */
 int project_destroy(const char *dir) {
-    char cmd[2048];
-    snprintf(cmd, sizeof cmd, "rm -rf %s/.biolang %s/app %s/build", dir, dir, dir);
-    system(cmd);
+    bio_rm_tree(join(dir, ".biolang"));
+    bio_rm_tree(join(dir, "app"));
+    bio_rm_tree(join(dir, "build"));
     printf("✔ destroyed build artifacts: %s/.biolang, %s/app\n", dir, dir);
     return 0;
 }

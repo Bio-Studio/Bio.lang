@@ -1,4 +1,5 @@
 #include "bio.h"
+#include "platform.h"
 
 /* ═══════════════ Builtin streams ═══════════════
  * CIO —— Console
@@ -559,12 +560,8 @@ Result *obj_request(const char *method, Value **args, int nargs) {
  * Per the spec: a Timestream can hold multiple timers at once; the default first timer belongs to the thread
  * and may not be reset; forked timers (the second, third, ...) may be reset.
  */
-#include <time.h>
-
 static double now_sec(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+    return bio_now_sec();
 }
 
 typedef struct { int id; double start; int forked; } Timer;
@@ -595,10 +592,7 @@ Result *time_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "now") == 0) return mk_res(mk_num(now_sec()));
     if (strcmp(method, "sleep") == 0) {
         double ms = (nargs > 0 && args[0]->kind == V_NUM) ? args[0]->num : 0;
-        struct timespec ts;
-        ts.tv_sec = (time_t)(ms / 1000.0);
-        ts.tv_nsec = (long)((ms - ts.tv_sec * 1000.0) * 1e6);
-        nanosleep(&ts, NULL);
+        bio_sleep_ms(ms);
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "start") == 0) {

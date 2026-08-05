@@ -21,6 +21,50 @@ Main {
 - **Binary interop** — link native `.so` libraries and call their functions directly (`&func()`, `Stream m & "libm.so"`).
 - **Smart references** — `&perm follow name` (`r/w/rw/m` × `u/f/a`) with a `Ref` API for read/write/move.
 
+## Platform support
+
+| Platform | Status |
+|---|---|
+| Linux (x86-64, aarch64) | ✅ Fully supported |
+| macOS (Intel x86-64) | ⚠️ Works, but the ucontext-based thread backend triggers deprecation warnings |
+| macOS (Apple Silicon) | ⚠️ Not reliable — Apple's ucontext has known bugs and is slated for removal |
+| Windows | 🚧 Not yet supported (needs a Fiber-based thread backend and a dlopen → LoadLibrary shim) |
+
+The codebase is clean C99 (builds warning-free with both gcc and clang); the
+portability gaps are all in OS APIs, not the language core. Porting is on the
+roadmap.
+
+## Building with profiles
+
+Pick a preset compile-time profile instead of passing flags by hand — handy for
+building on different environments, and easy for the community to extend:
+
+```bash
+make profiles                    # list the available profiles
+make                             # default: auto-detect platform + compiler
+make PROFILE=linux-gcc           # Linux, GCC, -O2
+make PROFILE=linux-clang         # Linux, clang, -O2
+make PROFILE=macos               # macOS (clang, silences ucontext warnings)
+make PROFILE=debug               # -O0 -g
+make PROFILE=release             # -O3
+make PROFILE=sanitize            # ASan + UBSan (dev)
+make PROFILE=windows             # experimental MinGW-w64 (see Platform support)
+make PROFILE=debug info          # show the resolved compiler/flags for a profile
+```
+
+A profile is a single file in [profiles/](profiles/) that sets `PROFILE_CC`,
+`PROFILE_OPT`, `PROFILE_CFLAGS`, `PROFILE_LDFLAGS`, `PROFILE_AR`,
+`PROFILE_PREFIX` and a one-line `PROFILE_DESC`. To add one, copy an existing
+profile and tweak it — no other changes needed.
+
+- `bio -b` reuses the profile's compiler and link flags, so a compiled
+  executable matches how `bio` itself was built.
+- **Switching profiles requires `make clean`** — make tracks timestamps, not
+  variable values.
+- Command-line overrides still win: `make PROFILE=linux-gcc CC=clang` uses
+  clang for `bio`, but `bio -b` still uses the profile's compiler (documented
+  behavior).
+
 ## Build & run
 
 ```bash

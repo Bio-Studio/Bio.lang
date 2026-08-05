@@ -1,15 +1,22 @@
 #include "bio.h"
+#include "platform.h"
 #include <stdlib.h>
 
 /* ═══════════════ Compiler (bio -b) ═══════════════
  * This language can be interpreted as well as compiled. Compilation strategy:
  * source embedding — generate a C driver containing the program source, link
- * against the interpreter runtime (libbio.a), and produce a self-contained
- * native executable. At runtime it needs neither bio nor the source, and it is
- * 100% faithful (request model / object streams / threads all reuse the interpreter).
+ * against the interpreter runtime, and produce a self-contained native
+ * executable. At runtime it needs neither bio nor the source, and it is 100%
+ * faithful (request model / object streams / threads all reuse the interpreter).
  */
 #ifndef BIO_HOME
 #define BIO_HOME "."
+#endif
+#ifndef BIO_CC
+#define BIO_CC "gcc"
+#endif
+#ifndef BIO_LDFLAGS
+#define BIO_LDFLAGS "-lm"
 #endif
 
 /* Escape the source into a C string literal */
@@ -28,6 +35,25 @@ static char *escape_cstr(const char *s) {
     }
     *p = 0;
     return out;
+}
+
+/* Split a string on whitespace into an argv array (points into s; NULL-terminated). */
+static int split_args(const char *s, const char **argv, int cap) {
+    int n = 0;
+    while (*s) {
+        while (*s && isspace((unsigned char)*s)) s++;
+        if (!*s) break;
+        if (n >= cap) break;
+        argv[n++] = s;
+        while (*s && !isspace((unsigned char)*s)) s++;
+    }
+    argv[n] = NULL;
+    return n;
+}
+
+/* Build the gcc argv for BIO_CC's -I flag (paths may contain spaces). */
+static void make_inc(const char *home, char *buf, size_t cap) {
+    snprintf(buf, cap, "%s/src", home);
 }
 
 /* Return 0 on success, 1 on failure */
@@ -58,21 +84,37 @@ int compile_program(const char *src, const char *outpath) {
         esc);
     fclose(f);
 
-    /* 3. Invoke gcc: compile the interpreter runtime sources directly (no prebuilt libbio.a dependency) */
-    char cmd[8192];
-    snprintf(cmd, sizeof cmd,
-        "gcc -O2 -I\"%s/src\" -o \"%s\" \"%s\" "
-        "\"%s/src/arena.c\" \"%s/src/lexer.c\" \"%s/src/value.c\" "
-        "\"%s/src/builtin.c\" \"%s/src/parser.c\" \"%s/src/interp.c\" "
-        "\"%s/src/bts.c\" \"%s/src/compile.c\" \"%s/src/toml.c\" \"%s/src/project.c\" -lm",
-        BIO_HOME, outpath, tmp,
-        BIO_HOME, BIO_HOME, BIO_HOME,
-        BIO_HOME, BIO_HOME, BIO_HOME,
-        BIO_HOME, BIO_HOME, BIO_HOME, BIO_HOME);
-    int rc = system(cmd);
+    /* 3. Spawn the compiler directly (argv array — no shell, no quoting bugs).
+     * Reuses the profile's compiler and link flags baked in at build time. */
+    static const char *RUNTIME[] = {
+        "arena.c", "lexer.c", "value.c", "builtin.c", "parser.c",
+        "interp.c", "bts.c", "compile.c", "toml.c", "project.c", "platform.c"
+    };
+    const char **av = aalloc(sizeof(char *) * (2 + 1 + 2 + 2 + (int)(sizeof RUNTIME / sizeof *RUNTIME) + 1 + 8));
+    int n = 0;
+    av[n++] = BIO_CC;
+    av[n++] = "-O2";
+    char inc[1024];
+    make_inc(BIO_HOME, inc, sizeof inc);
+    av[n++] = "-I";
+    av[n++] = inc;
+    av[n++] = "-o";
+    av[n++] = outpath;
+    av[n++] = tmp;
+    for (size_t i = 0; i < sizeof RUNTIME / sizeof *RUNTIME; i++) {
+        char *rp = aalloc(strlen(BIO_HOME) + strlen(RUNTIME[i]) + 8);
+        snprintf(rp, strlen(BIO_HOME) + strlen(RUNTIME[i]) + 8, "%s/src/%s", BIO_HOME, RUNTIME[i]);
+        av[n++] = rp;
+    }
+    const char *ld[8];
+    int nld = split_args(BIO_LDFLAGS, ld, 8);
+    for (int i = 0; i < nld; i++) av[n++] = ld[i];
+    av[n] = NULL;
+
+    int rc = bio_run(av);
     remove(tmp);
     if (rc != 0) {
-        fprintf(stderr, "compile error: gcc failed (exit status %d)\n", rc);
+        fprintf(stderr, "compile error: %s failed (exit status %d)\n", BIO_CC, rc);
         return 1;
     }
     return 0;

@@ -1,5 +1,8 @@
 #include "bio.h"
+#include "platform.h"
+#if !defined(_WIN32)
 #include <dlfcn.h>
+#endif
 
 /* Interpreter */
 void var_set(VarMap *m, const char *name, Value *v) {

@@ -13,6 +13,7 @@
 
 #define _XOPEN_SOURCE 700
 #include "bio.h"
+#include "platform.h"
 #include <ucontext.h>
 #include <time.h>
 
@@ -183,10 +184,7 @@ static long taskm_interval_ns = 0;
 
 static void taskm_sleep(void) {
     if (taskm_interval_ns <= 0) return;
-    struct timespec ts;
-    ts.tv_sec = taskm_interval_ns / 1000000000L;
-    ts.tv_nsec = taskm_interval_ns % 1000000000L;
-    nanosleep(&ts, NULL);
+    bio_sleep_ms((double)taskm_interval_ns / 1e6);
 }
 
 Result *taskm_request(const char *method, Value **args, int nargs) {
