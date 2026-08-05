@@ -121,7 +121,65 @@ static char *s_dup_range(const char *s, int start, int end) {
     return r;
 }
 
+/* ---------- SIO：字符串（IOStream 的字符串实现）----------
+ * 除字符串工具方法外，实现 IO 的核心方法（println/print/write/read/readln）：
+ * 写入/读取一个内存字符串缓冲区（SIO 的「文件」就是这块字符串）。
+ */
+#define SIO_BUF_SIZE 8192
+static char sio_buf[SIO_BUF_SIZE];
+static int sio_len = 0;
+static int sio_head = 0;
+
+/* 把一个值转成文本追加到 SIO 缓冲区（数字/字符串/Result 解包） */
+static void sio_append_arg(Value *v) {
+    if (v->kind == V_RES && v->res && !v->res->ref) v = v->res->res;
+    if (v->kind == V_STR) {
+        int l = (int)strlen(v->str);
+        if (sio_len + l < SIO_BUF_SIZE) { memcpy(sio_buf + sio_len, v->str, l); sio_len += l; sio_buf[sio_len] = 0; }
+    } else if (v->kind == V_NUM) {
+        char b[32]; snprintf(b, sizeof b, "%g", v->num);
+        int l = (int)strlen(b);
+        if (sio_len + l < SIO_BUF_SIZE) { memcpy(sio_buf + sio_len, b, l); sio_len += l; sio_buf[sio_len] = 0; }
+    }
+}
+
+static void sio_append_str(const char *s) {
+    int l = (int)strlen(s);
+    if (sio_len + l < SIO_BUF_SIZE) { memcpy(sio_buf + sio_len, s, l); sio_len += l; sio_buf[sio_len] = 0; }
+}
+
+static void sio_append_nl(void) {
+    if (sio_len + 1 < SIO_BUF_SIZE) { sio_buf[sio_len++] = '\n'; sio_buf[sio_len] = 0; }
+}
+
 static Result *sio_request(const char *method, Value **args, int nargs) {
+    /* ---- IO 核心方法（字符串实现）：写入缓冲区 ---- */
+    if (strcmp(method, "write") == 0 || strcmp(method, "print") == 0) {
+        for (int i = 0; i < nargs; i++) sio_append_arg(args[i]);
+        return mk_res(mk_str(""));
+    }
+    if (strcmp(method, "println") == 0) {
+        for (int i = 0; i < nargs; i++) { if (i) sio_append_str(" "); sio_append_arg(args[i]); }
+        sio_append_nl();
+        return mk_res(mk_str(""));
+    }
+    if (strcmp(method, "read") == 0 || strcmp(method, "readln") == 0) {
+        /* 从缓冲区读一行（到 \n 或末尾），消费 */
+        if (sio_head >= sio_len) return mk_res(mk_str(""));
+        int end = sio_head;
+        while (end < sio_len && sio_buf[end] != '\n') end++;
+        int n = end - sio_head;
+        char *line = aalloc(n + 1);
+        memcpy(line, sio_buf + sio_head, n); line[n] = 0;
+        sio_head = (end < sio_len) ? end + 1 : end;   /* 消费含换行 */
+        if (n && line[n-1] == '\r') line[n-1] = 0;
+        return mk_res(mk_str(line));
+    }
+    if (strcmp(method, "content") == 0) {
+        if (sio_head >= sio_len) return mk_res(mk_str(""));
+        return mk_res(mk_str(s_dup_range(sio_buf, sio_head, sio_len)));
+    }
+    if (strcmp(method, "clear") == 0) { sio_len = 0; sio_head = 0; return mk_res(mk_str("")); }
     if (strcmp(method, "format") == 0) {   /* 手写 %d %i %s %f 替换 */
         const char *fmt = arg_str(args, nargs, 0, "");
         char out[2048]; int oi = 0; int ai = 1;
@@ -186,7 +244,7 @@ static Result *sio_request(const char *method, Value **args, int nargs) {
         out[oi] = 0;
         return mk_res(mk_str(astrdup(out)));
     }
-    return mk_ref("SIO refused: no such method");
+    return mk_ref("SIO refused: no such method (IO: println/print/write/read/readln/content/clear; tools: format/length/upper/lower/trim/contains/substring/replace)");
 }
 
 /* ---------- Array：数组流 ---------- */

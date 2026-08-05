@@ -25,6 +25,15 @@ const STREAMS = {
     { name: 'exists',    detail: 'FIO::exists(路径) — 文件是否存在（1/0）',             doc: '示例: `ALL ok = FIO::exists("/tmp/a.txt");`' }
   ],
   SIO: [
+    /* IO 核心方法（字符串实现：写入/读取内存缓冲区） */
+    { name: 'println',  detail: 'SIO::println(...) — 写入缓冲区并换行',  doc: 'IO 核心方法；之后 SIO::readln/content 可读' },
+    { name: 'print',    detail: 'SIO::print(...) — 写入缓冲区（不换行）', doc: 'IO 核心方法' },
+    { name: 'write',    detail: 'SIO::write(...) — 写入缓冲区（裸写）',   doc: 'IO 核心方法' },
+    { name: 'read',     detail: 'SIO::read() — 从缓冲区读一行（消费）',   doc: 'IO 核心方法；空则返回空串' },
+    { name: 'readln',   detail: 'SIO::readln() — 从缓冲区读一行（消费）', doc: 'IO 核心方法；空则返回空串' },
+    { name: 'content',  detail: 'SIO::content() — 读缓冲区剩余（不消费）', doc: '示例: `SIO::content().res`' },
+    { name: 'clear',    detail: 'SIO::clear() — 清空缓冲区',              doc: '示例: `SIO::clear();`' },
+    /* 字符串工具 */
     { name: 'format',    detail: 'SIO::format(格式, ...) — 格式化字符串（%d %s %f）',   doc: '示例: `ALL s = SIO::format("%d + %d = %d", 2, 3, 5);`' },
     { name: 'length',    detail: 'SIO::length(字符串) — 长度',                          doc: '示例: `ALL n = SIO::length("abc");`' },
     { name: 'upper',     detail: 'SIO::upper(字符串) — 转大写',                         doc: '示例: `SIO::upper("hello")` → HELLO' },

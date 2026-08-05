@@ -2,7 +2,7 @@
   "name": "biolang",
   "displayName": "BioLang",
   "description": "BioLang 语言支持：语法高亮、代码片段、补全、运行命令（bio CLI）",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "publisher": "bio",
   "license": "MIT",
   "engines": {
@@ -12,9 +12,6 @@
     "Programming Languages"
   ],
   "main": "./src/extension.js",
-  "activationEvents": [
-    "onLanguage:biolang"
-  ],
   "contributes": {
     "languages": [
       {

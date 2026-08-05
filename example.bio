@@ -1,11 +1,6 @@
 program main;
 
 Main {
-    int add(a int, b int) {
-        res a + b;
-    }
-
     void exec() {
-        CIO::println(this::add(1, 2));
     }
 }
