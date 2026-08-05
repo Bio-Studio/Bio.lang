@@ -6,6 +6,6 @@ Main {
     }
 
     void exec() {
-        CIO::println(add(1, 2));
+        CIO::println(this::add(1, 2));
     }
 }
