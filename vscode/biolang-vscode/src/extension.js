@@ -9,11 +9,15 @@ const path = require('path');
 /* 内置子流的方法表 */
 const STREAMS = {
   CIO: [
-    { name: 'println',   detail: 'CIO::println(...) — 输出参数（空格分隔）并换行',   doc: '示例: `CIO::println("3 + 4 =", r.res);`' },
-    { name: 'print',     detail: 'CIO::print(...) — 输出参数，不换行',               doc: '示例: `CIO::print("请稍候...");`' },
-    { name: 'write',     detail: 'CIO::write(...) — IO 最基础二进制方法：裸写原始字节', doc: '示例: `IO::write("A");`（不换行不格式化）' },
-    { name: 'read',      detail: 'CIO::read(提示?) — 读取一行输入，返回字符串',       doc: '示例: `ALL name = CIO::read("名字: ");`' },
-    { name: 'readln',    detail: 'CIO::readln(提示?) — 读取一行（IO 核心方法）',      doc: '示例: `ALL line = IO::readln();`' },
+    /* 文本流：println/print 写文本，get/getln 读文本 */
+    { name: 'println',   detail: 'CIO::println(...) — 输出参数（空格分隔）并换行',   doc: '文本流；示例: `CIO::println("3 + 4 =", r.res);`' },
+    { name: 'print',     detail: 'CIO::print(...) — 输出参数，不换行',               doc: '文本流；示例: `CIO::print("请稍候...");`' },
+    { name: 'get',       detail: 'CIO::get() — 读一个字符（文本流）',                doc: '文本流；EOF 返回空串' },
+    { name: 'getln',     detail: 'CIO::getln(提示?) — 读一行文本（文本流）',          doc: '文本流；示例: `ALL line = CIO::getln("名字: ");`' },
+    /* 字节流：write/read 原始字节 */
+    { name: 'write',     detail: 'CIO::write(...) — 裸写原始字节（字节流）',          doc: '字节流；不换行不格式化' },
+    { name: 'read',      detail: 'CIO::read() — 读一个原始字节 0-255（字节流）',       doc: '字节流；EOF 返回 -1' },
+    /* 数值/错误 */
     { name: 'readInt',   detail: 'CIO::readInt(提示?) — 读取整数（失败 → 拒绝）',     doc: '示例: `ALL n = CIO::readInt("年龄: ");`' },
     { name: 'readNumber',detail: 'CIO::readNumber(提示?) — 读取浮点数（失败 → 拒绝）',doc: '示例: `ALL x = CIO::readNumber("小数: ");`' },
     { name: 'error',     detail: 'CIO::error(...) — 输出到 stderr（不换行）',         doc: '示例: `CIO::error("出错了");`' }
@@ -25,12 +29,15 @@ const STREAMS = {
     { name: 'exists',    detail: 'FIO::exists(路径) — 文件是否存在（1/0）',             doc: '示例: `ALL ok = FIO::exists("/tmp/a.txt");`' }
   ],
   SIO: [
-    /* IO 核心方法（字符串实现：写入/读取内存缓冲区） */
-    { name: 'println',  detail: 'SIO::println(...) — 写入缓冲区并换行',  doc: 'IO 核心方法；之后 SIO::readln/content 可读' },
-    { name: 'print',    detail: 'SIO::print(...) — 写入缓冲区（不换行）', doc: 'IO 核心方法' },
-    { name: 'write',    detail: 'SIO::write(...) — 写入缓冲区（裸写）',   doc: 'IO 核心方法' },
-    { name: 'read',     detail: 'SIO::read() — 从缓冲区读一行（消费）',   doc: 'IO 核心方法；空则返回空串' },
-    { name: 'readln',   detail: 'SIO::readln() — 从缓冲区读一行（消费）', doc: 'IO 核心方法；空则返回空串' },
+    /* 文本流（字符串实现）：print/println 写文本，get/getln 读文本 */
+    { name: 'println',  detail: 'SIO::println(...) — 写文本并换行',  doc: '文本流；之后 getln/get/content 可读' },
+    { name: 'print',    detail: 'SIO::print(...) — 写文本（不换行）', doc: '文本流' },
+    { name: 'get',      detail: 'SIO::get() — 读一个字符（文本流）',  doc: '文本流；空返回空串' },
+    { name: 'getln',    detail: 'SIO::getln() — 读一行文本（文本流）', doc: '文本流；空返回空串' },
+    /* 字节流：write/read 原始字节 */
+    { name: 'write',    detail: 'SIO::write(...) — 写原始字节到缓冲区', doc: '字节流' },
+    { name: 'read',     detail: 'SIO::read() — 读一个原始字节 0-255',  doc: '字节流；空返回 -1' },
+    /* 缓冲区工具 */
     { name: 'content',  detail: 'SIO::content() — 读缓冲区剩余（不消费）', doc: '示例: `SIO::content().res`' },
     { name: 'clear',    detail: 'SIO::clear() — 清空缓冲区',              doc: '示例: `SIO::clear();`' },
     /* 字符串工具 */

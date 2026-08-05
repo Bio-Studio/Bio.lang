@@ -40,16 +40,22 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "write") == 0) {
-        /* IO 最基础的二进制方法：裸写原始字节（不换行、不格式化） */
+        /* 字节流：裸写原始字节（不换行、不格式化） */
         for (int i = 0; i < nargs; i++) fwrite(arg_str(args, nargs, i, ""), 1, strlen(arg_str(args, nargs, i, "")), stdout);
         return mk_res(mk_str(""));
+    }
+    if (strcmp(method, "read") == 0) {
+        /* 字节流：读一个原始字节（0-255），EOF 返回 -1 */
+        int c = getchar();
+        return mk_res(mk_num(c == EOF ? -1 : (double)c));
     }
     if (strcmp(method, "error") == 0) {
         for (int i = 0; i < nargs; i++) fprintf(stderr, "%s", arg_str(args, nargs, i, ""));
         return mk_res(mk_str(""));
     }
-    if (strcmp(method, "read") == 0 || strcmp(method, "readln") == 0 ||
-        strcmp(method, "readInt") == 0 || strcmp(method, "readNumber") == 0) {
+    /* 文本流：getln 读一行文本；get 读一个字符；readInt/readNumber 读数值 */
+    if (strcmp(method, "getln") == 0 || strcmp(method, "readln") == 0 || strcmp(method, "readInt") == 0 ||
+        strcmp(method, "readNumber") == 0) {
         char buf[512];
         if (nargs > 0) {
             /* 提示参数：成功 Result 自动解包显示（res(x) → x） */
@@ -73,7 +79,14 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
         }
         return mk_res(mk_str(astrdup(buf)));
     }
-    return mk_ref("CIO refused: no such method");
+    if (strcmp(method, "get") == 0) {
+        /* 文本流：读一个字符（单个 UTF-8 字节；EOF 返回空串） */
+        int c = getchar();
+        if (c == EOF) return mk_res(mk_str(""));
+        char b[2] = { (char)c, 0 };
+        return mk_res(mk_str(astrdup(b)));
+    }
+    return mk_ref("CIO refused: no such method (bytes: read/write; text: get/getln/println/print; readInt/readNumber/error)");
 }
 
 /* ---------- FIO：文件 ---------- */
@@ -153,9 +166,20 @@ static void sio_append_nl(void) {
 }
 
 static Result *sio_request(const char *method, Value **args, int nargs) {
-    /* ---- IO 核心方法（字符串实现）：写入缓冲区 ---- */
-    if (strcmp(method, "write") == 0 || strcmp(method, "print") == 0) {
+    /* ---- IO 核心方法（字符串实现）----
+     * 字节流：write 写原始字节到缓冲区 / read 读一个原始字节并前进
+     * 文本流：print/println 写文本 / get/getln 读文本（getln 读一行） */
+    if (strcmp(method, "write") == 0) {
         for (int i = 0; i < nargs; i++) sio_append_arg(args[i]);
+        return mk_res(mk_str(""));
+    }
+    if (strcmp(method, "read") == 0) {
+        /* 字节流：读一个原始字节（0-255），空返回 -1 */
+        if (sio_head >= sio_len) return mk_res(mk_num(-1));
+        return mk_res(mk_num((double)(unsigned char)sio_buf[sio_head++]));
+    }
+    if (strcmp(method, "print") == 0) {
+        for (int i = 0; i < nargs; i++) { if (i) sio_append_str(" "); sio_append_arg(args[i]); }
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "println") == 0) {
@@ -163,8 +187,8 @@ static Result *sio_request(const char *method, Value **args, int nargs) {
         sio_append_nl();
         return mk_res(mk_str(""));
     }
-    if (strcmp(method, "read") == 0 || strcmp(method, "readln") == 0) {
-        /* 从缓冲区读一行（到 \n 或末尾），消费 */
+    if (strcmp(method, "getln") == 0 || strcmp(method, "readln") == 0) {
+        /* 文本流：读一行（到 \n 或末尾），消费 */
         if (sio_head >= sio_len) return mk_res(mk_str(""));
         int end = sio_head;
         while (end < sio_len && sio_buf[end] != '\n') end++;
@@ -174,6 +198,12 @@ static Result *sio_request(const char *method, Value **args, int nargs) {
         sio_head = (end < sio_len) ? end + 1 : end;   /* 消费含换行 */
         if (n && line[n-1] == '\r') line[n-1] = 0;
         return mk_res(mk_str(line));
+    }
+    if (strcmp(method, "get") == 0) {
+        /* 文本流：读一个字符（单个字节），空返回空串 */
+        if (sio_head >= sio_len) return mk_res(mk_str(""));
+        char b[2] = { sio_buf[sio_head++], 0 };
+        return mk_res(mk_str(astrdup(b)));
     }
     if (strcmp(method, "content") == 0) {
         if (sio_head >= sio_len) return mk_res(mk_str(""));

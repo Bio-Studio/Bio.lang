@@ -70,7 +70,8 @@ src/
 | 结果解包 | **`res X` / `cause X` 前缀提取运算符**（原稿语法：`res add(a,b)` 取结果、`cause add(a,b)` 取拒绝原因），可作表达式或语句；`.res` / `.cause` 属性等价；`res r;` / `cause r;` 语句级转发 | `length = res IO::readInt();`、`ALL why = cause Calc::div(1,0);`、`r.res`、`bad.cause`；`res r;` 转发成功值、`cause r;` 转发拒绝原因 |
 | **拒绝传播** | 被拒的 Result 作为参数 → 请求随之被拒 | `MyCalc::add(1, bad)` → ref |
 | 控制流 | `if/else if/else`、`while`、`for(;;)`、`break`、`continue` | 条件真值：0/空串/被拒 = 假 |
-| **子流** | **IO** IOStream 通用流（默认存在，核心方法 `println`/`readln`/`write`/`read`）/ **CIO** IO 的 Console 实现（+ 预置分叉 Console）/ **FIO** IO 的文件实现 / **SIO** IO 的字符串实现 / **Com** Comstream 计算流。IO 聚合 CIO/FIO/SIO | `IO::println` `IO::readln` `IO::write` `IO::read` `FIO::readFile` `SIO::format` |
+| **子流** | **IO** IOStream 通用流（默认存在）/ **CIO** IO 的 Console 实现（+ 预置分叉 Console）/ **FIO** IO 的文件实现 / **SIO** IO 的字符串实现 / **Com** Comstream 计算流。IO 聚合 CIO/FIO/SIO | `IO::println` `IO::getln` `IO::write` `IO::read` `FIO::readFile` `SIO::format` |
+| **流方法分类** | **文本流**：`println`/`print`（写文本）、`get`/`getln`（读文本：单字符/整行）；**字节流**：`write`（写原始字节）、`read`（读原始字节 0-255，EOF -1）。CIO/SIO 均实现（SIO 用内存字符串缓冲区作"文件"） | `CIO::getln()`、`SIO::read()`、`IO::write("A")` |
 | **Com 计算流** | 瞬时流的分支，处理各种瞬时计算：`abs/min/max/pow/sqrt/floor/ceil/round/sign/sin/cos/tan/log/exp` | `Com::abs(0-5).res`、`Com::pow(2, 10).res` |
 | **Timestream 计时流** | 同时拥有多个计时器；默认**第一个计时器归线程所有，不允许归零**，`Time::fork()` 分叉出的允许归零；`now/sleep/start/fork/elapsed/reset` | `Time::start()`（线程首计时器）；`ALL t = Time::fork(); Time::reset(t.res);` |
 | 裸函数调用 | `add(a, b)` — 全局搜索提供该方法的流 | `res add(a, b);`（spec 风格） |
