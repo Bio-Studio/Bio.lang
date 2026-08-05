@@ -15,7 +15,7 @@ typedef struct Node Node;
 
 typedef struct VarMap VarMap;
 
-typedef enum { V_NUM, V_STR, V_ARR, V_REF, V_OBJ, V_RES } VKind;
+typedef enum { V_NUM, V_STR, V_ARR, V_REF, V_OBJ, V_RES, V_STREAM } VKind;
 
 typedef struct Value {
     VKind kind;
@@ -31,6 +31,7 @@ typedef struct Value {
     const char *ref_name;  /* V_REF: 目标真名 */
     const char *obj_cls;   /* V_OBJ: 类名 */
     struct VarMap *obj_fields;  /* V_OBJ: 对象字段（属性） */
+    struct Stream *stream_ref;  /* V_STREAM: 流引用（CIO/FIO/... 作为参数传递） */
 } Value;
 
 struct Result {
@@ -59,7 +60,7 @@ struct Node {
     double num;
     const char *str;          /* N_STR */
     const char *name;         /* N_VAR / N_ASSIGN 变量名 / N_PROP 属性名 */
-    const char *op;           /* N_BINOP */
+    const char *op;           /* N_BINOP 运算符 / N_ASSIGN 赋值运算符（"=" "+=" "-=" 等） */
     Node *l, *r;              /* N_BINOP / N_PROP(base) */
     const char *qual;         /* N_CALL: 流名 */
     const char *mname;        /* N_CALL: 方法名 */
@@ -173,6 +174,7 @@ Result *interp_call_global(Interp *in, const char *mname, Value **args, int narg
 extern Interp *g_interp;
 int is_rejected(Value *v);
 Value *field_default(const char *type);
+Value *mk_streamref(Stream *s);
 Value *mk_num(double d);
 Result *mk_ref(const char *reason);
 Value *mk_refval(const char *reason);

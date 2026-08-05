@@ -5,6 +5,9 @@ Value *mk_num(double d) { Value *v = aalloc(sizeof(Value)); v->kind = V_NUM; v->
 
 Value *mk_str(const char *s) { Value *v = aalloc(sizeof(Value)); v->kind = V_STR; v->str = s; return v; }
 
+/* 流引用（V_STREAM）：流作为一等值可传递/当参数 */
+Value *mk_streamref(Stream *s) { Value *v = aalloc(sizeof(Value)); v->kind = V_STREAM; v->stream_ref = s; return v; }
+
 /* 字段默认值：string → 空串，[] → 空数组，数值/泛型 → 0 */
 Value *field_default(const char *type) {
     if (type && strstr(type, "string")) return mk_str("");
@@ -46,6 +49,7 @@ int truthy(Value *v) {
     if (!v) return 0;
     if (v->kind == V_RES) return !v->res->ref && truthy(v->res->res);
     if (v->kind == V_NUM) return v->num != 0;
+    if (v->kind == V_STREAM) return v->stream_ref != NULL;
     return v->kind == V_STR && v->str[0] != 0;
 }
 
@@ -67,6 +71,9 @@ void print_value(Value *v) {
             break;
         case V_REF:
             printf("&%s %s %s", v->ref_perm, v->ref_follow, v->ref_name);
+            break;
+        case V_STREAM:
+            printf("%s", v->stream_ref ? v->stream_ref->name : "(nil stream)");
             break;
         case V_OBJ:
             /* 数组对象（Array/Vector 类，data 字段=Solid 连续流）显示为数组 */

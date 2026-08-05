@@ -35,6 +35,7 @@ Node *parse_stmt(Parser *p);
 static int is_type_name(const char *s);
 static int valid_perm(const char *s);
 static int valid_follow(const char *s);
+static int is_assign_op(const char *s);
 
 Node *parse_if(Parser *p);
 
@@ -360,21 +361,21 @@ Node *parse_stmt(Parser *p) {
             expect_op(p, ";");
             return n;
         }
-        /* 赋值: x = e;  或  类型前缀: int x = e; */
-        if (p->i + 1 < p->n && p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "=") == 0) {
+        /* 赋值: x = e;  或  类型前缀: int x = e;  或  复合赋值: x += e; / x -= e; 等 */
+        if (p->i + 1 < p->n && p->t[p->i + 1].kind == T_OP && is_assign_op(p->t[p->i + 1].text)) {
             Node *n = mk_node(N_ASSIGN);
             n->name = next(p)->text;
-            next(p); /* = */
+            n->op = next(p)->text; /* = / += / -= / *= / /=  */
             n->expr = parse_expr(p);
             expect_op(p, ";");
             return n;
         }
         if (p->i + 2 < p->n && p->t[p->i + 1].kind == T_ID && p->t[p->i + 2].kind == T_OP &&
-            strcmp(p->t[p->i + 2].text, "=") == 0) {
+            is_assign_op(p->t[p->i + 2].text)) {
             next(p); /* 类型 */
             Node *n = mk_node(N_ASSIGN);
             n->name = next(p)->text;   /* 变量名 */
-            next(p); /* = */
+            n->op = next(p)->text;     /* = / += / -= 等 */
             n->expr = parse_expr(p);
             expect_op(p, ";");
             return n;
@@ -383,9 +384,10 @@ Node *parse_stmt(Parser *p) {
             const char *qual = next(p)->text;   /* 流名 / this */
             next(p); /* :: */
             const char *nm = expect_method_name(p);
-            if (is_op(p, "=")) {                 /* this::attr = v; 属性赋值 */
-                next(p); /* = */
+            if (is_op(p, "=") || is_op(p, "+=") || is_op(p, "-=") || is_op(p, "*=") ||
+                is_op(p, "/=") || is_op(p, "%=")) {   /* this::attr = v; / this::attr += v; 等 */
                 Node *n = mk_node(N_ASSIGN);
+                n->op = next(p)->text;   /* = / += / -= 等 */
                 Node *tgt = mk_node(N_PROP);
                 Node *base = mk_node(N_VAR);
                 base->name = qual;
@@ -452,11 +454,25 @@ static int valid_follow(const char *s) {
     return strcmp(s, "u") == 0 || strcmp(s, "f") == 0 || strcmp(s, "a") == 0;
 }
 
-/* 参数语法（唯一）：参数名 参数类型  如 void add(a int, b int)；数组 a int[] */
+/* 赋值运算符：= / 复合赋值 += -= *= /= %= */
+static int is_assign_op(const char *s) {
+    return strcmp(s, "=") == 0 || strcmp(s, "+=") == 0 || strcmp(s, "-=") == 0 ||
+           strcmp(s, "*=") == 0 || strcmp(s, "/=") == 0 || strcmp(s, "%=") == 0;
+}
+
+/* 参数语法（唯一）：参数名 参数类型  如 void add(a int, b int)；数组 a int[]；
+ * 类型可以是基本类型，也可以是任意类型名/流名（如 void show(cio CIO)）。
+ * 也支持智能引用修饰：void show(&r f io IO) —— &权限 跟随 参数名 类型。 */
 void parse_params(Parser *p, const char ***params, int *n) {
     const char **ps = aalloc(sizeof(char *) * 64);
     int n2 = 0;
     while (!is_op(p, ")")) {
+        /* &权限 跟随 参数名 类型 */
+        if (is_op(p, "&")) {
+            next(p);
+            next(p);                      /* 权限 r/w/rw/m */
+            next(p);                      /* 跟随 u/f/a */
+        }
         Tok *t = next(p);
         if (t->kind == T_ID) {
             if (is_type_name(t->text)) {
@@ -465,7 +481,11 @@ void parse_params(Parser *p, const char ***params, int *n) {
             }
             ps[n2++] = t->text;
             if (is_op(p, "[")) { next(p); expect_op(p, "]"); }
-            if (peek(p)->kind == T_ID && is_type_name(peek(p)->text)) next(p);
+            /* 类型：基本类型 或 任意标识符（流名/类名） */
+            if (peek(p)->kind == T_ID) {
+                if (is_type_name(peek(p)->text)) next(p);
+                else { next(p); if (is_op(p, "[")) { next(p); expect_op(p, "]"); } }
+            }
         }
         if (is_op(p, ",")) next(p);
     }

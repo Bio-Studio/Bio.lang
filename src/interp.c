@@ -103,7 +103,21 @@ Result *interp_exec_method(Interp *in, Method *m, Value **args, int nargs, VarMa
         scope.parent = parent;
     }
     if (self) var_set(&scope, "this", self);   /* 对象方法里 this = 对象本身 */
-    for (int i = 0; i < nargs; i++) var_set(&scope, m->params[i], args[i]);
+    for (int i = 0; i < nargs; i++) {
+        Value *a = args[i];
+        /* 智能引用参数指向流：&r f CIO → 目标 CIO 是流 → 绑定为流引用，方法内可 io::println */
+        if (a && a->kind == V_REF) {
+            Stream *ts = stream_find(in, a->ref_name);
+            if (ts) { a = mk_streamref(ts); goto bind; }
+        }
+        if (a && a->kind == V_RES && a->res && !a->res->ref && a->res->res &&
+            a->res->res->kind == V_REF) {
+            Stream *ts = stream_find(in, a->res->res->ref_name);
+            if (ts) { a = mk_streamref(ts); goto bind; }
+        }
+    bind:
+        var_set(&scope, m->params[i], a);
+    }
     VarMap *saved_scope = in->cur_scope;
     Stream *saved_stream = in->cur_stream;
     in->cur_scope = &scope;
@@ -139,6 +153,9 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
         case N_VAR: {
             Value *v = var_get(scope, e->name);
             if (v) return v;
+            /* 流也是一等值：CIO/IO/... 裸名可解析为流引用（流作为参数传递） */
+            Stream *s = stream_find(in, e->name);
+            if (s) return mk_streamref(s);
             char buf[256];
             snprintf(buf, sizeof buf, "拒绝：变量 %s 不存在（被冲走了？）", e->name);
             return mk_refval(astrdup(buf));
@@ -225,6 +242,18 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
             if (e->qual) {
                 s = stream_find(in, e->qual);
                 if (!s) {
+                    /* 流作为参数传递：qual 是 V_STREAM 变量 → 调用该流的方法 */
+                    Value *sv = var_get(scope, e->qual);
+                    if (sv && (sv->kind == V_STREAM || (sv->kind == V_RES && !sv->res->ref &&
+                                sv->res->res && sv->res->res->kind == V_STREAM))) {
+                        if (sv->kind == V_RES) sv = sv->res->res;
+                        if (sv->stream_ref) {
+                            Result *r2 = stream_request(in, sv->stream_ref, e->mname, vals, nvals);
+                            Value *w3 = aalloc(sizeof(Value));
+                            w3->kind = V_RES; w3->res = r2;
+                            return w3;
+                        }
+                    }
                     /* 对象流调用: 变量是对象/数组 → 调其类方法（this 绑定对象） */
                     Value *ov = var_get(scope, e->qual);
                     if (ov && (ov->kind == V_OBJ || ov->kind == V_ARR ||
@@ -342,6 +371,38 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                 /* thread 修饰：线程变量 → 当前线程作用域 */
                 var_set(in->cur_area, st->name, v);
                 break;
+            }
+            /* 复合赋值 += / -= / *= / /= / %=：目标旧值 运算符 v */
+            int is_compound = st->op && strcmp(st->op, "=") != 0;
+            if (is_compound) {
+                Value *old = NULL;
+                if (st->target && st->target->kind == N_PROP) {
+                    Value *base = eval_expr(in, st->target->l, scope);
+                    if (base->kind == V_RES && base->res && !base->res->ref && base->res->res)
+                        base = base->res->res;
+                    if (base->kind == V_OBJ || (base->kind == V_ARR && base->obj_fields))
+                        old = var_get_layer(base->obj_fields, st->target->name);
+                } else {
+                    old = var_get(scope, st->name);
+                }
+                if (!old || (old->kind == V_RES && old->res->ref)) {
+                    char buf[256];
+                    snprintf(buf, sizeof buf, "拒绝：%s 目标 %s 无旧值", st->op, st->name ? st->name : "属性");
+                    fl->ret = mk_ref(astrdup(buf)); break;
+                }
+                if (old->kind == V_RES && !old->res->ref) old = old->res->res;
+                if (old->kind != V_NUM || v->kind != V_NUM) {
+                    fl->ret = mk_ref("拒绝：复合赋值需要数值");
+                    break;
+                }
+                double nv2;
+                if (strcmp(st->op, "+=") == 0) nv2 = old->num + v->num;
+                else if (strcmp(st->op, "-=") == 0) nv2 = old->num - v->num;
+                else if (strcmp(st->op, "*=") == 0) nv2 = old->num * v->num;
+                else if (strcmp(st->op, "/=") == 0) { if (v->num == 0) { fl->ret = mk_ref("拒绝：除以零"); break; } nv2 = old->num / v->num; }
+                else if (strcmp(st->op, "%=") == 0) { if (v->num == 0) { fl->ret = mk_ref("拒绝：取模零"); break; } nv2 = (double)((long)old->num % (long)v->num); }
+                else { fl->ret = mk_ref("拒绝：未知复合赋值运算符"); break; }
+                v = mk_num(nv2);
             }
             if (st->target && st->target->kind == N_PROP) {
                 /* 属性赋值: this::base = v → 写对象/流字段 */

@@ -1,8 +1,5 @@
 program main;
 
-const int True = 1;
-const int False = 0;
-
 Class Vector {
     int x;
     int y;
@@ -10,12 +7,23 @@ Class Vector {
         this::x = x;
         this::y = y;
     }
+
+    void show(&w f io IO) {
+        io::println(SIO::format("%d ", this::x));
+        io::println(SIO::format("%d\n", this::y)); 
+    }
+
+    void add(&r f vec Vector) {
+        this::x += vec::x;
+        this::y += vec::y;
+    }
+
 }
 
 Main {
     void exec() {
         Vector v = new Vector(1, 2);
-        CIO::print(v::x);
-        CIO::print(v::y);
+        v::add(new Vector(3, 4));
+        v::show(CIO);
     }
 }

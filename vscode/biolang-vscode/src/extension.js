@@ -10,7 +10,9 @@ const STREAMS = {
   CIO: [
     { name: 'println',   detail: 'CIO::println(...) — 输出参数（空格分隔）并换行',   doc: '示例: `CIO::println("3 + 4 =", r.res);`' },
     { name: 'print',     detail: 'CIO::print(...) — 输出参数，不换行',               doc: '示例: `CIO::print("请稍候...");`' },
+    { name: 'write',     detail: 'CIO::write(...) — IO 最基础二进制方法：裸写原始字节', doc: '示例: `IO::write("A");`（不换行不格式化）' },
     { name: 'read',      detail: 'CIO::read(提示?) — 读取一行输入，返回字符串',       doc: '示例: `ALL name = CIO::read("名字: ");`' },
+    { name: 'readln',    detail: 'CIO::readln(提示?) — 读取一行（IO 核心方法）',      doc: '示例: `ALL line = IO::readln();`' },
     { name: 'readInt',   detail: 'CIO::readInt(提示?) — 读取整数（失败 → 拒绝）',     doc: '示例: `ALL n = CIO::readInt("年龄: ");`' },
     { name: 'readNumber',detail: 'CIO::readNumber(提示?) — 读取浮点数（失败 → 拒绝）',doc: '示例: `ALL x = CIO::readNumber("小数: ");`' },
     { name: 'error',     detail: 'CIO::error(...) — 输出到 stderr（不换行）',         doc: '示例: `CIO::error("出错了");`' }

@@ -49,6 +49,7 @@ src/
 | **字段声明** | 类/流可声明属性，**方法和字段任意顺序交错**，支持逗号分隔：`int x, y;` / `int[] a;` / `string s;` / `type T; T n; T[] a;`（泛型风格）。`new` 时按类型物化默认值（数值 0 / 字符串 "" / 数组 []） | `Class Vector { int x, y; }` → `v.x`、`v::x`、`this::x` 都可读写 |
 | **new 实例化** | `new Class(args...)` → 分叉类流 + 自动调 `__init__(args...)`，返回对象（Result 包）；**无任何特判**，所有类（含内置 Array）同一条路 | `ALL h = new Hero("TAK", 88);`、`ALL a = new Array(3);` → `h.hp`、`h::getName()` |
 | **对象模型** | 对象方法里 `this` = 对象本身；`Obj::new/get/set/forget/call/class`；对象流调用 `obj::method()`。方法内**裸名赋值**命中已声明字段 → 写实例属性（`x = x;` 即 `this::x = x;`），读取优先取参数/本地 | `Obj::set(this, "hp", 88);`、`ALL nm = h::getName();`、`__init__(x int) { x = x; }` |
+| **流/对象作为参数** | 流是一等值，可作方法参数并调用其方法；也支持智能引用修饰参数 `&权限 跟随 名 类型` | `void show(cio CIO) { cio::println(...); }`、`v::show(CIO)`；`void show(&w f io IO) { io::println(...); }`、`v::show(&w f CIO)`；`void add(&r f vec Vector) { this::x += vec::x; }` |
 | 请求/回应/拒绝 | `res expr;` 回应；`cause expr;` 拒绝（原稿语法）；兼容 `ref cause ...;` | 方法内 `res a + b;` 或 `cause "除数不能为 0";` |
 | **多返回类型** | 方法可声明返回类型 `void/int/float/double/string/char`（可带 `[]` 数组），**所有流统一**：签名流/分叉/Class/Main | `int add(a int, b int) { res a + b; }`、`string[] titles() { res "勇者", "传说"; }` |
 | **res 多值** | `res a, b, c;` 逗号分隔 → 返回数组 | `res 1, 2, 3;` → `[1, 2, 3]`；单值 `res x;` 保持原样 |
@@ -56,14 +57,14 @@ src/
 | 结果解包 | `.res` / `.ref`；`res r;` / `cause r;` 解出 ALL 值的 res / 拒绝原因 | `r.res` 取值、`bad.ref` 取拒绝原因；`res r;` 转发成功值、`cause r;` 转发拒绝原因 |
 | **拒绝传播** | 被拒的 Result 作为参数 → 请求随之被拒 | `MyCalc::add(1, bad)` → ref |
 | 控制流 | `if/else if/else`、`while`、`for(;;)`、`break`、`continue` | 条件真值：0/空串/被拒 = 假 |
-| **子流** | **CIO** 控制台（+ 预置分叉 Console） / **FIO** 文件 / **SIO** 字符串 / **IO** IOStream 父流（默认存在，聚合 CIO/FIO/SIO）/ **Com** Comstream 计算流 | `CIO::println` `FIO::readFile` `SIO::format` `IO::println` `IO::format` |
+| **子流** | **IO** IOStream 通用流（默认存在，核心方法 `println`/`readln`/`write`/`read`）/ **CIO** IO 的 Console 实现（+ 预置分叉 Console）/ **FIO** IO 的文件实现 / **SIO** IO 的字符串实现 / **Com** Comstream 计算流。IO 聚合 CIO/FIO/SIO | `IO::println` `IO::readln` `IO::write` `IO::read` `FIO::readFile` `SIO::format` |
 | **Com 计算流** | 瞬时流的分支，处理各种瞬时计算：`abs/min/max/pow/sqrt/floor/ceil/round/sign/sin/cos/tan/log/exp` | `Com::abs(0-5).res`、`Com::pow(2, 10).res` |
 | **Timestream 计时流** | 同时拥有多个计时器；默认**第一个计时器归线程所有，不允许归零**，`Time::fork()` 分叉出的允许归零；`now/sleep/start/fork/elapsed/reset` | `Time::start()`（线程首计时器）；`ALL t = Time::fork(); Time::reset(t.res);` |
 | 裸函数调用 | `add(a, b)` — 全局搜索提供该方法的流 | `res add(a, b);`（spec 风格） |
 | 默认返回 | 无显式 res/ref → 默认 `ref(无)`，if 视为假 | `ALL x = f(); if (x) {...}` → 走 else |
 | 假设 | `need value/function/stream/Class ...;`（`need Stream`/`need Class` 可带 `{...}` body，原稿语法） | 未满足 → 拒绝运行 |
 | **变量修饰** | `const int x = 10;` → Constantstream（只读，重复声明/修改拒绝，方法内与**顶层**均可）；`int x = 10;` → 作用域流；`thread int x = 10;` → 线程变量（线程作用域） | `const int PI = 3;` 改 PI → 拒绝「常量不能修改」 |
-| 运算 | `+ - * / == != < > <= >=`、数字、字符串、变量 | `ALL y = x.res * 2 + 1;` |
+| 运算 | `+ - * / == != < > <= >=`、数字、字符串、变量；**复合赋值** `+= -= *= /= %=`（变量与 `this::属性` 均可） | `ALL y = x.res * 2 + 1;`、`this::n += 1;` |
 | 基本类型 | `int` `float` `double` `string` `char`（字段：`int n;` 类型 对象） | |
 | **数组/Vector（Bio 类）** | Array/Vector 是 **Bio 代码实现的类**（非解释器内置），底层调 Solid 连续流；`new Array(n)`/`new Vector()` 创建；方法 `__init__/len/get/set/push/pop/clear/join` | `ALL a = new Array(3); a::set(0, 10); a::push(40); a::len().res; a::join("-").res` |
 | **Solid 连续流** | 连续存储 + 自动分配 + **移动头指针**；`new/len/get/set/push/pop/read/peek/head/resetHead/clear/join` | `ALL s = Solid::new().res; Solid::read(s).res`（头指针前进） |

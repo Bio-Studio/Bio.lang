@@ -20,7 +20,13 @@ static const char *arg_str(Value **args, int n, int i, const char *dflt) {
 /* ---------- CIO：控制台 ---------- */
 static Result *cio_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "println") == 0) {
-        for (int i = 0; i < nargs; i++) { if (i) printf(" "); print_value(args[i]); }
+        for (int i = 0; i < nargs; i++) {
+            if (i) printf(" ");
+            /* 成功 Result 自动解包显示（res(x) → x；ref 保持 ref 显示） */
+            if (args[i]->kind == V_RES && args[i]->res && !args[i]->res->ref)
+                print_value(args[i]->res->res);
+            else print_value(args[i]);
+        }
         printf("\n");
         return mk_res(mk_str(""));
     }
@@ -28,12 +34,17 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
         for (int i = 0; i < nargs; i++) print_value(args[i]);
         return mk_res(mk_str(""));
     }
+    if (strcmp(method, "write") == 0) {
+        /* IO 最基础的二进制方法：裸写原始字节（不换行、不格式化） */
+        for (int i = 0; i < nargs; i++) fwrite(arg_str(args, nargs, i, ""), 1, strlen(arg_str(args, nargs, i, "")), stdout);
+        return mk_res(mk_str(""));
+    }
     if (strcmp(method, "error") == 0) {
         for (int i = 0; i < nargs; i++) fprintf(stderr, "%s", arg_str(args, nargs, i, ""));
         return mk_res(mk_str(""));
     }
-    if (strcmp(method, "read") == 0 || strcmp(method, "readInt") == 0 ||
-        strcmp(method, "readNumber") == 0) {
+    if (strcmp(method, "read") == 0 || strcmp(method, "readln") == 0 ||
+        strcmp(method, "readInt") == 0 || strcmp(method, "readNumber") == 0) {
         char buf[512];
         if (nargs > 0) print_value(args[0]);
         if (!fgets(buf, sizeof buf, stdin)) buf[0] = 0;

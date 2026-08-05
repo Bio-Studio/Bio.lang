@@ -75,7 +75,7 @@
       "name": "entity.name.function.biolang"
     },
     "operators": {
-      "match": "::|==|!=|<=|>=|[-+*/=;,.(){}<>\\[\\]&]",
+      "match": "::|==|!=|<=|>=|\\+=|-=|\\*=|/=|%=|[-+*/=;,.(){}<>\\[\\]&]",
       "name": "keyword.operator.biolang"
     },
     "identifiers": {
