@@ -1,0 +1,44 @@
+// 09-threads.bio
+// Teaches: cooperative threads with Threads.
+//
+// Threads are cooperative user threads (ucontext). `Threads::spawn("name",
+// args...)` runs a *bare method* (found globally by name) in a new thread
+// and returns a thread id; `Threads::join(id)` waits for it and returns its
+// result. Inside a thread, `Threads::yield()` voluntarily gives up the CPU
+// so other threads can run (there is no preemption).
+
+program main;
+
+Calc Worker {
+    void factorial(n int) {
+        ALL f = 1;
+        ALL i = 1;
+        while (i <= n) { f = f * i; i = i + 1; }
+        res f;
+    }
+    void countUp(n int) {
+        ALL i = 0;
+        while (i < n) { i = i + 1; Threads::yield(); }
+        res i;
+    }
+}
+
+Main {
+    void exec() {
+        // Spawn two threads running the bare methods "factorial" and "countUp".
+        ALL t1 = Threads::spawn("factorial", 10).res;
+        ALL t2 = Threads::spawn("countUp", 5).res;
+        IO::println("live threads:", Threads::active().res);
+
+        // Join waits for each thread and fetches its res/ref.
+        ALL r1 = Threads::join(t1);
+        IO::println("thread", t1, " 10! =", r1.res);
+        ALL r2 = Threads::join(t2);
+        IO::println("thread", t2, " countUp =", r2.res);
+    }
+}
+
+// Expected output:
+//   live threads: 2
+//   thread 1  10! = 3628800
+//   thread 2  countUp = 5

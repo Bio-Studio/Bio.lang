@@ -1,0 +1,54 @@
+// 07-arrays.bio
+// Teaches: arrays and vectors.
+//
+// Array and Vector are classes *written in Bio code* on top of the Solid
+// contiguous stream. `new Array(n)` creates an array of n zeroes;
+// `Arrays::vector()` (or `new Vector()`) creates a growable vector. Every
+// array registers itself in the `Arrays` collection.
+
+program main;
+
+Main {
+    void exec() {
+        // Fixed-size array of 3 zeroes.
+        ALL a = new Array(3);
+        a::set(0, 10); a::set(1, 20); a::set(2, 30);
+        IO::println("array:", a);
+
+        // Arrays can grow too.
+        a::push(40);
+        IO::println("after push:", a, " len:", a::len().res);
+        IO::println("join(-):", a::join("-").res);
+
+        // Indexed read and write with a[i].
+        IO::println("a[1] =", a[1]);
+        a[1] = 99;
+        IO::println("after a[1] = 99:", a);
+
+        // Array literal: new type[n] works for base types and classes.
+        int[] b = new int[4];
+        for (ALL i = 0; i < 4; i = i + 1;) { b[i] = i * i; }
+        IO::println("new int[4] squares:", b);
+
+        // Vector: grows freely.
+        ALL v = Arrays::vector();
+        v::push(10); v::push(20); v::push(30);
+        IO::println("vector:", v, " len:", v::len().res);
+
+        // The Arrays collection tracks all live instances.
+        IO::println("Arrays count:", Arrays::count().res);
+        Arrays::forget(v);
+        IO::println("after forget:", Arrays::count().res);
+    }
+}
+
+// Expected output:
+//   array: [10, 20, 30]
+//   after push: [10, 20, 30, 40]  len: 4
+//   join(-): 10-20-30-40
+//   a[1] = 20
+//   after a[1] = 99: [10, 99, 30, 40]
+//   new int[4] squares: [0, 1, 4, 9]
+//   vector: [10, 20, 30]  len: 3
+//   Arrays count: 3      (a, b, and v all register in the Arrays collection)
+//   after forget: 2

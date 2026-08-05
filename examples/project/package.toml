@@ -1,0 +1,8 @@
+# BioLang demo project manifest.
+# Standard fields: name / version / repo (optional) + [dependencies].
+name = "biolang-demo-project"
+version = "0.1.0"
+
+[dependencies]
+# libfoo = { version = "1.0.0" }
+# libbar = { version = "0.2.0", repo = "https://..." }

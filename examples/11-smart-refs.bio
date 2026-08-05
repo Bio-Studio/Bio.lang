@@ -1,0 +1,69 @@
+// 11-smart-refs.bio
+// Teaches: smart references — &permission follow name.
+//
+// A smart reference points at a *target* by name, resolved in a follow layer:
+//   permission: r (read) / w (write) / rw (read-write) / m (movable)
+//   follow    : u (program level, Unistream) / f (method level) / a (scope level)
+// Read, write, or move the target through the Ref stream.
+
+program main;
+
+Calc Worker {
+    void threadJob(n int) {
+        // a layer = the current thread's own scope, isolated per thread.
+        ALL wa = &w a local_note;                 // writable a-layer ref
+        Ref::write(wa, n * 2);
+        ALL ra = &r a local_note;                 // read-only a-layer ref
+        IO::println("thread", Threads::self().res, " a-layer =", Ref::read(ra).res);
+        res Ref::read(ra).res;
+    }
+}
+
+Main {
+    void exec() {
+        // u layer = program level, shared by every thread.
+        ALL wr = &w u counter;
+        Ref::write(wr, 10);
+        ALL rr = &r u counter;
+        IO::println("u read counter =", Ref::read(rr).res);
+
+        // A read-only reference refuses writes (shown via .cause).
+        IO::println("read-only write →", Ref::write(rr, 99).cause);
+
+        // Reference variable declarations (realme syntax):
+        //   name &perm follow [type] [= init]
+        count &w u int = 5;          // w-u ref to "count", initialized to 5
+        ALL rc = &r u count;
+        IO::println("count decl →", Ref::read(rc).res);
+
+        // a-layer isolation: each thread sees its own local_note.
+        ALL t1 = Threads::spawn("threadJob", 21).res;
+        ALL t2 = Threads::spawn("threadJob", 22).res;
+        IO::println("t1 =", Threads::join(t1).res, " t2 =", Threads::join(t2).res);
+
+        // Movable permission m + Ref::move takes the target away.
+        ALL x = 42;
+        ALL mv = &m f x;             // method-level movable ref
+        IO::println("before move x =", Ref::read(mv).res);
+        ALL taken = Ref::move(mv);
+        IO::println("Ref::move took =", taken.res);
+        IO::println("after move read x →", Ref::read(mv).cause);
+
+        // const declares a read-only program-level constant.
+        const int SPEED = 9;
+        IO::println("const SPEED =", SPEED);
+        // Assigning to a const is refused ("refused: constant is read-only").
+    }
+}
+
+// Expected output (the two thread lines may appear in either order):
+//   u read counter = 10
+//   read-only write → Ref refused: reference is read-only, cannot write
+//   count decl → 5
+//   thread 1  a-layer = 42        (thread ids/order may vary)
+//   thread 2  a-layer = 44
+//   t1 = 42  t2 = 44
+//   before move x = 42
+//   Ref::move took = 42
+//   after move read x → Ref refused: target x does not exist (f layer)
+//   const SPEED = 9

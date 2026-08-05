@@ -1,0 +1,47 @@
+// 05-io-substreams.bio
+// Teaches: the IO family — CIO (console), FIO (file), SIO (string), and IO.
+//
+//   CIO  Console   : println/print/get/getln/readInt/readNumber/error
+//   FIO  File      : open/close/readFile/writeFile/appendFile/exists ...
+//   SIO  String    : format/upper/lower/trim/contains/substring/replace ...
+//   IO   Aggregate : dispatches to CIO/FIO/SIO in order
+//
+// Stream methods come in two kinds:
+//   text streams: println/print (write text), get/getln (read text)
+//   byte streams: write (raw bytes), read (raw byte 0-255, -1 on EOF)
+
+program main;
+
+Main {
+    void exec() {
+        // CIO: console output.
+        CIO::println("CIO console output");
+        IO::println("IO aggregates CIO");
+
+        // SIO: an in-memory string buffer acts as a "file".
+        ALL s = SIO::format("%d + %d = %d", 2, 3, 5);
+        IO::println("SIO::format →", s.res);
+        ALL up = SIO::upper("hello");
+        IO::println("SIO::upper →", up.res);
+        SIO::println("line one");
+        ALL line = SIO::getln();                 // read the buffer back
+        IO::println("SIO::getln →", line.res);
+
+        // FIO: write and read back a real file.
+        FIO::writeFile("/tmp/bio_example.txt", "Hello from BioLang!");
+        FIO::appendFile("/tmp/bio_example.txt", " Appended line");
+        ALL content = FIO::readFile("/tmp/bio_example.txt");
+        IO::println("FIO read back:", content.res);
+        ALL ok = FIO::exists("/tmp/bio_example.txt");
+        IO::println("FIO::exists →", ok.res);
+    }
+}
+
+// Expected output:
+//   CIO console output
+//   IO aggregates CIO
+//   SIO::format → 2 + 3 = 5
+//   SIO::upper → HELLO
+//   SIO::getln → line one
+//   FIO read back: Hello from BioLang! Appended line
+//   FIO::exists → 1

@@ -1,0 +1,70 @@
+// 13-need.bio
+// Teaches: assumptions with `need`.
+//
+// `need` declares that a program relies on a value, function, stream, or
+// class being available. At run time every need must be satisfied, otherwise
+// the WHOLE program refuses to run. This example satisfies all four kinds.
+//
+//   need value PI;        ← satisfied by the top-level const PI
+//   need function greet;  ← satisfied by the method greet() in Greeter G
+//   need stream Writer;   ← satisfied by the signature stream Writer
+//   need Class Hero;      ← satisfied by the class Hero
+
+program main;
+
+need value PI;
+need function greet;
+need stream Writer;
+need Class Hero;
+
+// A top-level const → Constantstream (read-only), satisfies `need value PI`.
+const int PI = 3;
+
+// A signature stream satisfies `need stream Writer`.
+Stream Writer {
+    void write(msg string);
+}
+Writer ConsoleWriter {
+    void write(msg string) { IO::println(msg); }
+}
+
+// A stream whose method is named greet satisfies `need function greet`.
+Stream Greeter {
+    void greet(name string);
+}
+Greeter G {
+    void greet(name string) { IO::println("hello,", name); }
+}
+
+// A class satisfies `need Class Hero`.
+Class Hero {
+    int hp;
+}
+
+Main {
+    void exec() {
+        // The const is visible as a bare name (via the scope chain).
+        IO::println("PI =", PI);
+
+        // Bare call → the method that satisfied `need function greet`.
+        greet("TAK");
+
+        // Use the stream that satisfied `need stream Writer`.
+        ConsoleWriter::write("writing via a needed stream");
+
+        // Instantiate the class that satisfied `need Class Hero`.
+        ALL h = new Hero();
+        IO::println("hero created, hp =", h.hp);
+    }
+}
+
+// Expected output:
+//   PI = 3
+//   hello, TAK
+//   writing via a needed stream
+//   hero created, hp = 0
+//
+// Try breaking one of the needs (e.g. delete the `Class Hero` block) and the
+// whole program refuses to run, printing something like:
+//   ⛔ assumption unmet: Class Hero
+//   ⛔ refusing to run: unmet assumptions exist

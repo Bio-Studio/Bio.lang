@@ -1,0 +1,6 @@
+// project/utils/config.bio — provides the value GREETING.
+//
+// A top-level `const` creates a program-level constant, which satisfies a
+// `need value GREETING;` declared in another file.
+
+const string GREETING = "Hello from utils/";

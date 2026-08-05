@@ -1,0 +1,61 @@
+// 02-requests.bio
+// Teaches: the request / response model — the heart of BioLang.
+//
+// Every operation is a *request*. A request is answered with
+//   res <value>;    (respond)
+// or refused with
+//   cause <reason>; (refuse)
+//
+// Calling a method returns an `ALL` value that carries both halves:
+//   result.res    — the responded value (if not refused)
+//   result.cause  — the refusal reason (if refused)
+//
+// A method that never responds nor refuses is refused with the default
+// reason "nothing" (which counts as falsy in `if`).
+
+program main;
+
+// A signature stream declares *what* a stream can do.
+Stream Calc {
+    int add(a int, b int);
+    int div(a int, b int);
+}
+
+// A fork supplies the actual implementation.
+Calc MyCalc {
+    int add(a int, b int) { res a + b; }              // respond
+    int div(a int, b int) { cause "division by zero"; }  // refuse
+}
+
+Main {
+    void exec() {
+        // A successful request carries its value in .res.
+        ALL r = MyCalc::add(3, 4);
+        IO::println("3 + 4 =", r.res);
+
+        // A refused request carries its reason in .cause.
+        ALL bad = MyCalc::div(1, 0);
+        IO::println("div cause:", bad.cause);
+
+        // Methods that were never declared are refused too.
+        ALL missing = MyCalc::sqrt(9);
+        IO::println("missing method cause:", missing.cause);
+
+        // No explicit res/cause → default ref(nothing), which is falsy.
+        ALL d = noReturn();
+        IO::println("default return cause:", d.cause);
+        if (d) { IO::println("if is true"); }
+        else { IO::println("if is false (default ref nothing)"); }
+    }
+
+    // This method never responds or refuses.
+    int noReturn() { IO::println("(noReturn runs)"); }
+}
+
+// Expected output:
+//   (noReturn runs)
+//   3 + 4 = 7
+//   div cause: division by zero
+//   missing method cause: stream MyCalc refuses: no method sqrt
+//   default return cause: nothing
+//   if is false (default ref nothing)

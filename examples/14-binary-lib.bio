@@ -1,0 +1,34 @@
+// 14-binary-lib.bio
+// Teaches: calling native C libraries.
+//
+// `Stream Name & "lib.so" { }` dlopens a shared library and exposes its
+// exported functions as stream methods. `&func(...)` calls a symbol found in
+// any loaded library. Functions follow the C convention double(*)(double,...)
+// — numeric arguments only, at most 6.
+//
+// NOTE: we use "libm.so.6" because on many systems (Fedora, Debian, ...)
+// "libm.so" is just a linker script and cannot be dlopen'd directly.
+
+program main;
+
+Stream m & "libm.so.6" {}
+
+Main {
+    void exec() {
+        // Functions exported by the library become stream methods.
+        ALL s = m::sin(0);
+        IO::println("m::sin(0) =", s.res);
+        IO::println("m::cos(0) =", m::cos(0).res);
+        IO::println("m::pow(2,10) =", m::pow(2, 10).res);
+
+        // Global binary call: find the symbol in any loaded library.
+        ALL p = &pow(2, 10);
+        IO::println("&pow(2,10) =", p.res);
+    }
+}
+
+// Expected output:
+//   m::sin(0) = 0
+//   m::cos(0) = 1
+//   m::pow(2,10) = 1024
+//   &pow(2,10) = 1024

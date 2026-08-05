@@ -1,0 +1,53 @@
+// 06-classes-objects.bio
+// Teaches: classes and objects.
+//
+// A `Class` is essentially a stream. `new Class(args...)` forks the class
+// stream, auto-calls `__init__(args...)`, and returns an object. Inside
+// object methods `this` is the object itself; declared fields are read and
+// written via `obj.field`, `obj::field`, or `this::field`.
+
+program main;
+
+Class Hero {
+    // Constructor: called automatically by `new Hero(...)`.
+    void __init__(name string, hp int) {
+        Obj::set(this, "name", name);       // store arbitrary attributes
+        Obj::set(this, "hp", hp);
+        IO::println("hero appears:", name);
+    }
+
+    // A method returning a value.
+    int getHp() { res 100; }
+
+    string getName() { res Obj::get(this, "name").res; }
+}
+
+Main {
+    void exec() {
+        // new → fork class stream + run __init__, returning an object.
+        ALL h = new Hero("TAK", 88);
+        IO::println("object:", h);
+
+        // Attributes are directly accessible.
+        IO::println("name =", h.name, " hp =", h.hp);
+
+        // Call methods on the object with obj::method().
+        ALL hp = Obj::call(h, "getHp");
+        IO::println("Obj::call getHp() =", hp.res);
+        ALL nm = h::getName();
+        IO::println("h::getName() =", nm.res);
+
+        // Each instance is independent.
+        ALL h2 = new Hero("Lily", 66);
+        IO::println("h2.hp =", h2.hp, " (h.hp still =", h.hp, ")");
+    }
+}
+
+// Expected output:
+//   hero appears: TAK
+//   object: <object Hero {name: TAK, hp: 88}>
+//   name = TAK  hp = 88
+//   Obj::call getHp() = 100
+//   h::getName() = TAK
+//   hero appears: Lily
+//   h2.hp = 66  (h.hp still = 88 )
