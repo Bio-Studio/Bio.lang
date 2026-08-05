@@ -1,9 +1,17 @@
 #include "bio.h"
 
 /* 语法分析 */
-Tok *peek(Parser *p) { return &p->t[p->i]; }
+/* 越界安全：始终停在 T_EOF，错误恢复时 next() 不会读到数组外 */
+Tok *peek(Parser *p) {
+    if (p->i >= p->n) return &p->t[p->n - 1];
+    return &p->t[p->i];
+}
 
-Tok *next(Parser *p) { return &p->t[p->i++]; }
+Tok *next(Parser *p) {
+    Tok *t = peek(p);
+    if (p->i < p->n) p->i++;
+    return t;
+}
 
 int is_op(Parser *p, const char *op) { return peek(p)->kind == T_OP && strcmp(peek(p)->text, op) == 0; }
 
@@ -79,7 +87,7 @@ Node *parse_primary(Parser *p) {
         e->args = aalloc(sizeof(Node *) * 64); e->nargs = 0;
         Node *cn = mk_node(N_STR); cn->str = cls;
         e->args[e->nargs++] = cn;
-        while (!is_op(p, ")")) {
+        while (!is_op(p, ")") && !p->err) {
             e->args[e->nargs++] = parse_expr(p);
             if (is_op(p, ",")) next(p);
         }
@@ -105,7 +113,7 @@ Node *parse_primary(Parser *p) {
                 e->mname = nm;
                 next(p); /* ( */
                 e->args = aalloc(sizeof(Node *) * 64); e->nargs = 0;
-                while (!is_op(p, ")")) {
+                while (!is_op(p, ")") && !p->err) {
                     e->args[e->nargs++] = parse_expr(p);
                     if (is_op(p, ",")) next(p);
                 }
@@ -152,7 +160,7 @@ Node *parse_primary(Parser *p) {
         b->mname = expect_id(p);
         expect_op(p, "(");
         b->args = aalloc(sizeof(Node *) * 64); b->nargs = 0;
-        while (!is_op(p, ")")) {
+        while (!is_op(p, ")") && !p->err) {
             b->args[b->nargs++] = parse_expr(p);
             if (is_op(p, ",")) next(p);
         }
@@ -210,7 +218,7 @@ Node *parse_call_plain(Parser *p, const char *fname) {
     e->mname = fname;
     expect_op(p, "(");
     e->args = aalloc(sizeof(Node *) * 64); e->nargs = 0;
-    while (!is_op(p, ")")) {
+    while (!is_op(p, ")") && !p->err) {
         e->args[e->nargs++] = parse_expr(p);
         if (is_op(p, ",")) next(p);
     }
@@ -225,7 +233,7 @@ Node *parse_call(Parser *p, const char *qual) {
     e->mname = expect_method_name(p);
     expect_op(p, "(");
     e->args = aalloc(sizeof(Node *) * 64); e->nargs = 0;
-    while (!is_op(p, ")")) {
+    while (!is_op(p, ")") && !p->err) {
         e->args[e->nargs++] = parse_expr(p);
         if (is_op(p, ",")) next(p);
     }
@@ -360,7 +368,7 @@ Node *parse_stmt(Parser *p) {
         b->mname = expect_id(p);
         expect_op(p, "(");
         b->args = aalloc(sizeof(Node *) * 64); b->nargs = 0;
-        while (!is_op(p, ")")) {
+        while (!is_op(p, ")") && !p->err) {
             b->args[b->nargs++] = parse_expr(p);
             if (is_op(p, ",")) next(p);
         }
@@ -494,7 +502,7 @@ Node *parse_stmt(Parser *p) {
             c->mname = nm;
             expect_op(p, "(");
             c->args = aalloc(sizeof(Node *) * 64); c->nargs = 0;
-            while (!is_op(p, ")")) {
+            while (!is_op(p, ")") && !p->err) {
                 c->args[c->nargs++] = parse_expr(p);
                 if (is_op(p, ",")) next(p);
             }
@@ -556,7 +564,7 @@ static int is_assign_op(const char *s) {
 void parse_params(Parser *p, const char ***params, int *n) {
     const char **ps = aalloc(sizeof(char *) * 64);
     int n2 = 0;
-    while (!is_op(p, ")")) {
+    while (!is_op(p, ")") && !p->err) {
         /* &权限 跟随 参数名 类型 */
         if (is_op(p, "&")) {
             next(p);

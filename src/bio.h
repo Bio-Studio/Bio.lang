@@ -184,6 +184,7 @@ Decl *parse_program_tokens(Tok *toks, int n, int *err);
 void print_value(Value *v);
 const char *reject_reason(Value *v);
 void run_source(const char *src);
+int compile_program(const char *src, const char *outpath);   /* bio -b：源码嵌入编译 */
 Tok *tokenize(const char *src, int *ntok);
 int truthy(Value *v);
 Value *var_get(VarMap *m, const char *name);

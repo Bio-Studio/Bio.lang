@@ -302,6 +302,11 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                         Decl *cls = find_class(in, clsname);
                         Method *m = cls ? class_method(cls, e->mname) : NULL;
                         if (!m) {
+                            /* 非 Class 流（如 Main 主程序流）：this 绑定流对象时从流方法解析 */
+                            Stream *ts = stream_find(in, clsname);
+                            if (ts) m = method_find(ts, e->mname);
+                        }
+                        if (!m) {
                             char buf[256];
                             snprintf(buf, sizeof buf, "refused: class %s has no method %s", clsname, e->mname);
                             return mk_refval(astrdup(buf));
@@ -437,6 +442,8 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                     fl->ret = mk_ref(astrdup(buf)); break;
                 }
                 if (old->kind == V_RES && !old->res->ref) old = old->res->res;
+                /* RHS 也解包：sum += a[j] 中 a[j] 可能是 Result 包装 */
+                if (v->kind == V_RES && v->res && !v->res->ref) v = v->res->res;
                 if (old->kind != V_NUM || v->kind != V_NUM) {
                     fl->ret = mk_ref("refused: compound assignment requires numbers");
                     break;

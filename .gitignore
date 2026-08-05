@@ -1,6 +1,8 @@
 # 编译产物
 bio
+libbio.a
 *.o
+*.generated.c
 
 # 旧单文件归档（源码已在 src/ 多模块）
 biolang.c.mono

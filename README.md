@@ -1,16 +1,28 @@
 # BioLang — 解释器原型 (C)
 
-Biolang 语言的 C 实现（仅解释器，编译器以后再说）。命令行工具名为 **`bio`**。
+Biolang 语言的 C 实现，**既可以解释也可以编译**。命令行工具名为 **`bio`**。
 
 ## 构建与运行
 
 ```bash
-make              # 编译 → ./bio
+make              # 编译 → ./bio（同时生成 libbio.a，编译功能用）
 make install      # 安装到 ~/.local/bin/bio
 
-bio               # 跑内置 12 个演示
-bio 程序.bl       # 运行 BioLang 源文件
+bio               # 跑内置 13 个演示
+bio 程序.bio      # 运行 BioLang 源文件（解释）
+bio -r 程序.bio   # 显式运行（解释）
+bio -b 程序.bio [-o 输出]   # 编译 → 自包含原生可执行文件
 bio --tokens x.bl # 查看词法分析结果（调试用）
+bio -h            # 帮助
+```
+
+### 编译模式（`-b`）
+
+`bio -b 程序.bio` 把程序编译成**自包含的原生可执行文件**（源码嵌入 + 链接解释器运行时 `libbio.a`），运行时不再需要 `bio` 或源码。默认输出名 = 源文件去掉扩展名（`example.bio` → `example`），可用 `-o` 指定。
+
+```bash
+bio -b example.bio -o example
+./example          # 独立运行，无需 bio
 ```
 
 ## 代码结构（多模块）
@@ -25,7 +37,8 @@ src/
 ├── builtin.c    # 内置流（CIO/FIO/SIO/IO/Com/Time/Rem/Solid/Array/Ref/…）
 ├── bts.c        # Threads 协作式线程 + Taskm 任务调度
 ├── interp.c     # 解释器（流注册表、求值、假设检查、run_source）
-└── main.c       # 入口 + 内置演示
+├── compile.c    # 编译器（bio -b：源码嵌入 + 链接 libbio.a）
+└── main.c       # 入口 + CLI（-b/-r/--tokens）+ 内置演示
 ```
 
 ## VSCode 插件
@@ -95,7 +108,7 @@ src/
 12. 流内部裸调用 + this::属性 + Arrays 集合/Vector
 13. IO 聚合 / Com 计算流 / 引用变量声明 / Ref::move / Time fork / res·cause 解包
 
-## 未实现（编译器阶段再说）
+## 未实现（后续再说）
 
-- 编译到目标代码（本语言可以解释也可以编译，当前仅解释器）
 - `Threadstream`（进程流）/ `Areastream` 等作为显式流类型的声明语法（当前 area 仅作为隐式作用域层存在）
+- 编译模式目前是「源码嵌入 + 链接运行时」的自我包含可执行文件；真正的 AST→机器码 / 独立运行时还待后续
