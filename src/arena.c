@@ -1,6 +1,6 @@
 #include "bio.h"
 
-/* 简易内存池 */
+/* Simple arena memory pool */
 #define ARENA_SIZE (8u << 20)
 static char arena[ARENA_SIZE];
 static size_t arena_used = 0;

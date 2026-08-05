@@ -1,14 +1,14 @@
 #include "bio.h"
 #include <dlfcn.h>
 
-/* 解释器 */
+/* Interpreter */
 void var_set(VarMap *m, const char *name, Value *v) {
     for (int i = 0; i < m->n; i++)
         if (strcmp(m->names[i], name) == 0) { m->vals[i] = v; return; }
     if (m->n < 256) { m->names[m->n] = name; m->vals[m->n] = v; m->n++; }
 }
 
-/* 删除字段（Objstream 属性被冲走） */
+/* Delete a field (Objstream property washed away) */
 void var_del(VarMap *m, const char *name) {
     for (int i = 0; i < m->n; i++)
         if (strcmp(m->names[i], name) == 0) {
@@ -19,14 +19,14 @@ void var_del(VarMap *m, const char *name) {
         }
 }
 
-/* 单层查找（智能引用：跟随哪层就在哪层找，不沿链） */
+/* Single-layer lookup (smart reference: search only the layer it follows, not up the chain) */
 Value *var_get_layer(VarMap *m, const char *name) {
     for (int i = 0; i < m->n; i++)
         if (strcmp(m->names[i], name) == 0) return m->vals[i];
     return NULL;
 }
 
-/* 沿作用域链查找（方法 → area → 全局） */
+/* Search up the scope chain (method → area → globals) */
 Value *var_get(VarMap *m, const char *name) {
     for (VarMap *s = m; s; s = s->parent) {
         for (int i = 0; i < s->n; i++)
@@ -43,10 +43,10 @@ Interp *interp_new(Decl *decls) {
     memset(&in->consts, 0, sizeof(VarMap));
     memset(&in->main_area, 0, sizeof(VarMap));
     in->main_area.is_area = 1;
-    in->main_area.parent = &in->globals;   /* 链：方法 → 字段 → area → globals → consts */
-    in->globals.parent = &in->consts;      /* Constantstream 公共常量在最顶，全局可见 */
+    in->main_area.parent = &in->globals;   /* Chain: method → fields → area → globals → consts */
+    in->globals.parent = &in->consts;      /* Constantstream public constants at the very top, visible globally */
     in->cur_area = &in->main_area;
-    in->arrays = mk_arr(16);   /* Arrays 注册表：所有 Array/Vector 实例 */
+    in->arrays = mk_arr(16);   /* Arrays registry: all Array/Vector instances */
     return in;
 }
 
@@ -72,14 +72,14 @@ Method *method_find(Stream *s, const char *name) {
     return NULL;
 }
 
-/* 前向声明 */
+/* Forward declarations */
 Value *eval_expr(Interp *in, Node *e, VarMap *scope);
 
 void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl);
 
 void exec_stmts(Interp *in, Node **stmts, int n, VarMap *scope, Flow *fl);
 
-/* 执行类方法（Objstream：Obj::call / new 的 __init__） */
+/* Execute a class method (Objstream: Obj::call / __init__ for new) */
 Result *interp_exec_method(Interp *in, Method *m, Value **args, int nargs, VarMap *parent, Value *self) {
     if (m->nparams != nargs) {
         char buf[256];
@@ -87,7 +87,7 @@ Result *interp_exec_method(Interp *in, Method *m, Value **args, int nargs, VarMa
         return mk_ref(astrdup(buf));
     }
     if (m->builtin) {
-        /* 内置类方法：通用分派，self 作为第一个参数 */
+        /* Builtin class method: generic dispatch, self as the first argument */
         Value **all = aalloc(sizeof(Value *) * (size_t)(nargs + 1));
         all[0] = self;
         for (int i = 0; i < nargs; i++) all[i + 1] = args[i];
@@ -96,16 +96,16 @@ Result *interp_exec_method(Interp *in, Method *m, Value **args, int nargs, VarMa
     VarMap scope;
     memset(&scope, 0, sizeof(VarMap));
     if (self && (self->kind == V_OBJ || (self->kind == V_ARR && self->obj_fields))) {
-        /* 作用域链：方法 → 对象/流字段 → area → globals（内部裸读属性） */
+        /* Scope chain: method → object/stream fields → area → globals (internal bare property reads) */
         scope.parent = self->obj_fields;
         self->obj_fields->parent = parent;
     } else {
         scope.parent = parent;
     }
-    if (self) var_set(&scope, "this", self);   /* 对象方法里 this = 对象本身 */
+    if (self) var_set(&scope, "this", self);   /* Inside an object method, this = the object itself */
     for (int i = 0; i < nargs; i++) {
         Value *a = args[i];
-        /* 智能引用参数指向流：&r f CIO → 目标 CIO 是流 → 绑定为流引用，方法内可 io::println */
+        /* Smart-reference argument pointing to a stream: &r f CIO → target CIO is a stream → bind as a stream reference so io::println works inside the method */
         if (a && a->kind == V_REF) {
             Stream *ts = stream_find(in, a->ref_name);
             if (ts) { a = mk_streamref(ts); goto bind; }
@@ -121,7 +121,7 @@ Result *interp_exec_method(Interp *in, Method *m, Value **args, int nargs, VarMa
     VarMap *saved_scope = in->cur_scope;
     Stream *saved_stream = in->cur_stream;
     in->cur_scope = &scope;
-    /* 当前流：this 对象反查（类/流名；数组对象 → Array 类），供裸调用优先 + 内部属性 */
+    /* Current stream: reverse-lookup of the this object (class/stream name; array object → Array class), for bare-call priority + internal properties */
     in->cur_stream = self ? stream_find(in, self->kind == V_ARR ? "Array" : self->obj_cls) : NULL;
     Flow fl = {0};
     exec_stmts(in, m->stmts, m->nstmts, &scope, &fl);
@@ -135,8 +135,8 @@ Result *stream_request(Interp *in, Stream *s, const char *method, Value **args, 
     if (s->builtin) return builtin_request(s->builtin, method, args, nargs);
     Method *m = method_find(s, method);
     if (!m) {
-        /* 签名流方法缺失 → 优先回退到该签名流的实现流（D_FORK sig == s->name），
-         * 找不到再从任意用户流里找（避免误中内置 Vector::get 等） */
+        /* Signature-stream method missing → fall back first to the signature stream's implementation stream (D_FORK sig == s->name);
+         * if still not found, search any user stream (to avoid accidentally hitting builtin Vector::get and the like) */
         for (Decl *d = in->decls; d; d = d->next) {
             if (d->kind == D_FORK && strcmp(d->sig, s->name) == 0) {
                 Stream *impl = stream_find(in, d->name);
@@ -153,7 +153,7 @@ Result *stream_request(Interp *in, Stream *s, const char *method, Value **args, 
         snprintf(buf, sizeof buf, "stream %s refuses: no method %s", s->name, method);
         return mk_ref(astrdup(buf));
     }
-    /* 用户流方法：this = 流对象（属性存流字段），作用域链 方法 → 流字段 → area */
+    /* User stream method: this = the stream object (properties stored in the stream's fields), scope chain method → stream fields → area */
     Value *self = mk_obj(s->name);
     self->obj_fields = s->fields;
     Result *r = interp_exec_method(in, m, args, nargs, in->cur_area, self);
@@ -167,7 +167,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
         case N_VAR: {
             Value *v = var_get(scope, e->name);
             if (v) return v;
-            /* 流也是一等值：CIO/IO/... 裸名可解析为流引用（流作为参数传递） */
+            /* Streams are first-class values too: bare names like CIO/IO/... resolve to a stream reference (streams passed as arguments) */
             Stream *s = stream_find(in, e->name);
             if (s) return mk_streamref(s);
             char buf[256];
@@ -177,7 +177,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
         case N_PROP: {
             Value *base = eval_expr(in, e->l, scope);
             if (base->kind == V_OBJ || (base->kind == V_ARR && base->obj_fields)) {
-                /* 对象属性访问：obj.hp（数组对象也可有属性） */
+                /* Object property access: obj.hp (array objects can also have properties) */
                 Value *f = var_get_layer(base->obj_fields, e->name);
                 if (f) return f;
                 char buf[256];
@@ -194,11 +194,11 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                     return base->res->res;
                 }
                 if (strcmp(e->name, "cause") == 0 || strcmp(e->name, "ref") == 0) {
-                    /* ALL 结构含 res 与 cause；.cause 合规，.ref 为兼容别名 */
+                    /* The ALL structure holds both res and cause; .cause is the proper name, .ref is a compatibility alias */
                     if (base->res->ref) return mk_str(base->res->ref);
                     return mk_str("(no cause)");
                 }
-                /* 透传：成功 Result 里是对象/数组对象 → 属性访问（new 结果可直接 h.hp） */
+                /* Pass-through: a successful Result holding an object/array object → property access (a new result can be used directly as h.hp) */
                 if (!base->res->ref && base->res->res &&
                     (base->res->res->kind == V_OBJ ||
                      (base->res->res->kind == V_ARR && base->res->res->obj_fields))) {
@@ -219,27 +219,27 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
         case N_REF:
             return mk_refobj(e->ref_perm, e->ref_follow, e->ref_name);
         case N_UNWRAP: {
-            /* res X 取结果 / cause X 取拒绝原因（原稿前缀提取运算符） */
+            /* res X takes the result / cause X takes the refusal reason (draft prefix extraction operator) */
             Value *v = eval_expr(in, e->l, scope);
             int want_cause = strcmp(e->op, "cause") == 0;
             if (is_rejected(v)) {
-                if (want_cause) return mk_str(reject_reason(v));   /* 被拒 → 拒绝原因 */
-                return v;                                            /* res 被拒值 → 拒绝传播 */
+                if (want_cause) return mk_str(reject_reason(v));   /* Rejected → refusal reason */
+                return v;                                            /* res on a rejected value → refusal propagation */
             }
             if (v->kind == V_RES && v->res) {
                 if (want_cause) {
                     if (v->res->ref) return mk_str(v->res->ref);
                     return mk_str("(no cause)");
                 }
-                if (v->res->ref) return v;                          /* 拒绝传播 */
+                if (v->res->ref) return v;                          /* Refusal propagation */
                 return v->res->res;
             }
-            /* 非 Result：res 即自身，cause 为无 */
+            /* Not a Result: res is itself, cause is none */
             if (want_cause) return mk_str("(no cause)");
             return v;
         }
         case N_INDEX: {
-            /* 数组下标读取: a[i]（Array 实例底层是 Solid 连续流） */
+            /* Array index read: a[i] (Array instances are backed by a Solid contiguous stream) */
             Value *base = eval_expr(in, e->l, scope);
             if (base->kind == V_RES && base->res && !base->res->ref && base->res->res)
                 base = base->res->res;
@@ -294,7 +294,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
             if (e->qual) {
                 s = stream_find(in, e->qual);
                 if (!s) {
-                    /* 流作为参数传递：qual 是 V_STREAM 变量 → 调用该流的方法 */
+                    /* Stream passed as an argument: qual is a V_STREAM variable → call the method on that stream */
                     Value *sv = var_get(scope, e->qual);
                     if (sv && (sv->kind == V_STREAM || (sv->kind == V_RES && !sv->res->ref &&
                                 sv->res->res && sv->res->res->kind == V_STREAM))) {
@@ -306,17 +306,17 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                             return w3;
                         }
                     }
-                    /* 对象流调用: 变量是对象/数组 → 调其类方法（this 绑定对象） */
+                    /* Object stream call: the variable is an object/array → call its class method (this bound to the object) */
                     Value *ov = var_get(scope, e->qual);
                     if (ov && (ov->kind == V_OBJ || ov->kind == V_ARR ||
                                (ov->kind == V_RES && ov->res && !ov->res->ref &&
                                 ov->res->res && (ov->res->res->kind == V_OBJ || ov->res->res->kind == V_ARR)))) {
-                        if (ov->kind == V_RES) ov = ov->res->res;   /* 解包 */
+                        if (ov->kind == V_RES) ov = ov->res->res;   /* Unwrap */
                         const char *clsname = ov->kind == V_ARR ? "Array" : ov->obj_cls;
                         Decl *cls = find_class(in, clsname);
                         Method *m = cls ? class_method(cls, e->mname) : NULL;
                         if (!m) {
-                            /* 非 Class 流（如 Main 主程序流）：this 绑定流对象时从流方法解析 */
+                            /* Non-Class stream (e.g. Main main program stream): when this binds a stream object, resolve from stream methods */
                             Stream *ts = stream_find(in, clsname);
                             if (ts) m = method_find(ts, e->mname);
                         }
@@ -332,7 +332,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                         if (r->ref && strcmp(r->ref, NOTHING) != 0) return mk_refval(r->ref);
                         Value *w2 = aalloc(sizeof(Value));
                         w2->kind = V_RES;
-                        if (r->ref) w2->res = mk_res(mk_str(""));   /* 隐式完成 → 成功无值 */
+                        if (r->ref) w2->res = mk_res(mk_str(""));   /* Implicit completion → success with no value */
                         else w2->res = mk_res(r->res);
                         return w2;
                     }
@@ -341,7 +341,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                     return mk_refval(astrdup(buf));
                 }
             } else {
-                /* 裸调用：先查当前流自身方法（内部调用无需 ::），再全局搜索 */
+                /* Bare call: first check the current stream's own methods (internal calls need no ::), then search globally */
                 s = NULL;
                 if (in->cur_stream && method_find(in->cur_stream, e->mname))
                     s = in->cur_stream;
@@ -365,7 +365,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
             if (is_rejected(a)) return a;
             Value *b = eval_expr(in, e->r, scope);
             if (is_rejected(b)) return b;
-            /* 自动解包成功 Result（add(a) + add(b) 直接可用） */
+            /* Auto-unwrap successful Results (add(a) + add(b) usable directly) */
             if (a->kind == V_RES && a->res && !a->res->ref && a->res->res) a = a->res->res;
             if (b->kind == V_RES && b->res && !b->res->ref && b->res->res) b = b->res->res;
             const char *op = e->op;
@@ -403,12 +403,12 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
 void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
     switch (st->kind) {
         case N_REALME: {
-            /* 引用变量声明（原稿 realme）：名字 &权限 跟随 [类型] [= 初值] */
+            /* Reference variable declaration (draft realme): name &permission follow [type] [= initial value] */
             Value *ref = mk_refobj(st->ref_perm, st->ref_follow, st->name);
             if (st->init) {
                 Value *iv = eval_expr(in, st->init, scope);
                 if (is_rejected(iv)) { fl->ret = mk_ref(reject_reason(iv)); break; }
-                var_set(ref_layer_get(in, st->ref_follow), st->name, iv);   /* 初值写入跟随层 */
+                var_set(ref_layer_get(in, st->ref_follow), st->name, iv);   /* Write the initial value into the followed layer */
             }
             var_set(scope, st->name, ref);
             break;
@@ -416,7 +416,7 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
         case N_ASSIGN: {
             Value *v = eval_expr(in, st->expr, scope);
             if (st->is_const) {
-                /* const 修饰：加入 Constantstream，重复声明拒绝 */
+                /* const modifier: add to Constantstream, reject redeclaration */
                 if (var_get_layer(&in->consts, st->name)) {
                     fl->ret = mk_ref("refused: constant already declared");
                     break;
@@ -425,11 +425,11 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                 break;
             }
             if (st->is_thread) {
-                /* thread 修饰：线程变量 → 当前线程作用域 */
+                /* thread modifier: thread variable → current thread scope */
                 var_set(in->cur_area, st->name, v);
                 break;
             }
-            /* 复合赋值 += / -= / *= / /= / %=：目标旧值 运算符 v */
+            /* Compound assignment += / -= / *= / /= / %=: target old value OP v */
             int is_compound = st->op && strcmp(st->op, "=") != 0;
             if (is_compound) {
                 Value *old = NULL;
@@ -440,7 +440,7 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                     if (base->kind == V_OBJ || (base->kind == V_ARR && base->obj_fields))
                         old = var_get_layer(base->obj_fields, st->target->name);
                 } else if (st->target && st->target->kind == N_INDEX) {
-                    /* a[i] += v：读数组元素旧值 */
+                    /* a[i] += v: read the array element's old value */
                     Node *old_idx = aalloc(sizeof(Node));
                     old_idx->kind = N_INDEX;
                     old_idx->l = st->target->l; old_idx->r = st->target->r;
@@ -456,7 +456,7 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                     fl->ret = mk_ref(astrdup(buf)); break;
                 }
                 if (old->kind == V_RES && !old->res->ref) old = old->res->res;
-                /* RHS 也解包：sum += a[j] 中 a[j] 可能是 Result 包装 */
+                /* RHS also unwrapped: in sum += a[j], a[j] may be a Result wrapper */
                 if (v->kind == V_RES && v->res && !v->res->ref) v = v->res->res;
                 if (old->kind != V_NUM || v->kind != V_NUM) {
                     fl->ret = mk_ref("refused: compound assignment requires numbers");
@@ -472,7 +472,7 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                 v = mk_num(nv2);
             }
             if (st->target && st->target->kind == N_PROP) {
-                /* 属性赋值: this::base = v → 写对象/流字段 */
+                /* Property assignment: this::base = v → write an object/stream field */
                 Value *base = eval_expr(in, st->target->l, scope);
                 if (base->kind == V_RES && base->res && !base->res->ref && base->res->res)
                     base = base->res->res;
@@ -484,7 +484,7 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                 break;
             }
             if (st->target && st->target->kind == N_INDEX) {
-                /* 数组下标赋值: a[i] = v → 写 Array 底层 Solid 连续流 */
+                /* Array index assignment: a[i] = v → write to the Array's underlying Solid contiguous stream */
                 Value *base = eval_expr(in, st->target->l, scope);
                 if (base->kind == V_RES && base->res && !base->res->ref && base->res->res)
                     base = base->res->res;
@@ -503,13 +503,13 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                 break;
             }
             if (st->name && var_get_layer(&in->consts, st->name)) {
-                /* 常量只读：修改拒绝 */
+                /* Constants are read-only: refuse modification */
                 fl->ret = mk_ref("refused: constant is read-only (const)");
                 break;
             }
-            /* 对象流裸名赋值（通用）：this 对象已储存该属性 → 写入实例字段。
-             * 这样 __init__(x int) { x = x; } 里 x 是已声明字段时，裸赋值写实例属性，
-             * 而读取仍优先取参数。适用于类实例与流对象。 */
+            /* Object-stream bare-name assignment (generic): if the this object already stores this property → write to the instance field.
+             * This way, in __init__(x int) { x = x; }, when x is a declared field, the bare assignment writes the instance property,
+             * while reads still prefer the argument. Applies to class instances and stream objects. */
             if (!st->is_const && !st->is_thread) {
                 Value *thisv = var_get(scope, "this");
                 if (thisv && (thisv->kind == V_OBJ || (thisv->kind == V_ARR && thisv->obj_fields)) &&
@@ -526,7 +526,7 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
             break;
         case N_RET: {
             if (strcmp(st->retkind, "res") == 0 && st->nrets > 1) {
-                /* res 多值 → 数组 */
+                /* Multiple res values → array */
                 Value *arr = mk_arr(st->nrets);
                 for (int i = 0; i < st->nrets; i++)
                     arr->items[arr->len++] = eval_expr(in, st->rets[i], scope);
@@ -534,12 +534,12 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
             } else {
                 Value *v = eval_expr(in, st->expr, scope);
                 if (strcmp(st->retkind, "res") == 0) {
-                    /* res result; 解包：被回应值是成功 Result → 取其内层 res */
+                    /* res result; unwrap: the responded value is a successful Result → take its inner res */
                     if (v->kind == V_RES && v->res && !v->res->ref && v->res->res)
                         v = v->res->res;
                     fl->ret = mk_res(v);
                 } else {
-                    /* cause result; 解包：被回应值是被拒 Result → 转发其拒绝原因 */
+                    /* cause result; unwrap: the responded value is a rejected Result → forward its refusal reason */
                     if (v->kind == V_RES && v->res && v->res->ref)
                         fl->ret = mk_ref(v->res->ref);
                     else if (v->kind == V_RES && v->res && !v->res->ref)
@@ -561,9 +561,9 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                 Flow inner = {0};
                 exec_stmts(in, st->stmts, st->nstmts, scope, &inner);
                 if (inner.ret) { fl->ret = inner.ret; return; }
-                if (inner.brk) break;              /* continue → 重新判断条件 */
+                if (inner.brk) break;              /* continue → re-evaluate the condition */
             }
-            fl->brk = 0;                            /* 消费 break */
+            fl->brk = 0;                            /* Consume the break */
             break;
         }
         case N_FOR: {
@@ -597,9 +597,9 @@ void exec_stmts(Interp *in, Node **stmts, int n, VarMap *scope, Flow *fl) {
         exec_stmt(in, stmts[i], scope, fl);
 }
 
-/* ═══════════════ 构建 + 假设检查 + 运行 ═══════════════ */
+/* ═══════════════ Build + assumption check + run ═══════════════ */
 void build(Interp *in) {
-    /* 预置 Bio 代码：Array/Vector 类用 Bio 语言实现（原稿：非解释器里），底层调 Solid 连续流 */
+    /* Prebuilt Bio code: the Array/Vector classes are implemented in the Bio language (draft: not in the interpreter), calling the Solid contiguous stream underneath */
     {
         static const char *PREBUILT =
             "Class Array {\n"
@@ -642,8 +642,8 @@ void build(Interp *in) {
         }
     }
 
-    /* 内置流：CIO(控制台) / FIO(文件) / SIO(字符串) / IO(父流) / Com(计算流)
-     * / Solid(连续流) / Arrays(数组集合) / Time(计时流) / Rem(记忆流) + Console 分叉 */
+    /* Builtin streams: CIO (console) / FIO (file) / SIO (string) / IO (parent stream) / Com (computation stream)
+     * / Solid (contiguous stream) / Arrays (array collection) / Time (timing stream) / Rem (memory stream) + Console fork */
     stream_add(in, stream_new("Obj", B_OBJ));
     stream_add(in, stream_new("Const", B_CONST));
     stream_add(in, stream_new("Rem", B_REM));
@@ -656,12 +656,12 @@ void build(Interp *in) {
     stream_add(in, stream_new("Arrays", B_ARRAYS));
     stream_add(in, stream_new("FIO", B_FIO));
     stream_add(in, stream_new("CIO", B_CIO));
-    stream_add(in, stream_new("Com", B_COM));       /* Comstream 计算流 */
-    stream_add(in, stream_new("IO", B_IO));         /* IOStream 父流：聚合 CIO/FIO/SIO */
-    stream_add(in, stream_new("Console", B_CIO));   /* CIO 的预置分叉 */
+    stream_add(in, stream_new("Com", B_COM));       /* Comstream computation stream */
+    stream_add(in, stream_new("IO", B_IO));         /* IOStream parent stream: aggregates CIO/FIO/SIO */
+    stream_add(in, stream_new("Console", B_CIO));   /* CIO's prebuilt fork */
     for (Decl *d = in->decls; d; d = d->next) {
         if (d->kind == D_BIN) {
-            /* 二进制库流：dlopen 加载，导出函数自动成为流方法 */
+            /* Binary library stream: loaded via dlopen, exported functions automatically become stream methods */
             void *h = dlopen(d->file, RTLD_LAZY | RTLD_GLOBAL);
             if (!h) {
                 fprintf(stderr, "⚠️ binary library load failed %s: %s\n", d->file, dlerror());
@@ -680,7 +680,7 @@ void build(Interp *in) {
                 e->next = s->methods;
                 s->methods = e;
             }
-            /* 继承签名流声明的字段 + 自身字段（分叉流可自定义），以默认值物化 */
+            /* Inherit the signature stream's declared fields + its own fields (fork streams can customize), materialized with default values */
             for (Decl *t = in->decls; t; t = t->next)
                 if (t->kind == D_SIG && strcmp(t->name, d->sig) == 0) {
                     for (int i = 0; i < t->nfields; i++)
@@ -691,7 +691,7 @@ void build(Interp *in) {
                 var_set(s->fields, d->fields[i].name, field_default(d->fields[i].type));
             stream_add(in, s);
         } else if (d->kind == D_CLASS) {
-            /* 类也是流：方法（含带返回类型）注册为流方法 */
+            /* Classes are also streams: methods (including those with return types) are registered as stream methods */
             Stream *s = stream_new(d->name, 0);
             for (int i = 0; i < d->nmethods; i++) {
                 MethodEntry *e = aalloc(sizeof(MethodEntry));
@@ -710,7 +710,7 @@ void build(Interp *in) {
                 stream_add(in, s);
             }
         } else if (d->kind == D_MAIN) {
-            /* Main 也是流（主程序流）：其方法进入全局裸调用搜索 */
+            /* Main is also a stream (main program stream): its methods participate in the global bare-call search */
             if (!stream_find(in, "Main")) {
                 Stream *s = stream_new("Main", 0);
                 for (int i = 0; i < d->nmethods; i++) {
@@ -722,7 +722,7 @@ void build(Interp *in) {
                 stream_add(in, s);
             }
         } else if (d->kind == D_CONST) {
-            /* 顶层 const int x = 10; → Constantstream 公共常量 */
+            /* Top-level const int x = 10; → Constantstream public constant */
             VarMap s0;
             memset(&s0, 0, sizeof s0);
             s0.parent = &in->consts;
@@ -773,7 +773,7 @@ void run_program(Interp *in) {
         if (strcmp(main->methods[i].name, "exec") == 0) exec = &main->methods[i];
     if (!exec) { printf("ℹ️ no exec() in Main\n"); return; }
 
-    /* Main 也是流：this 可用（主程序流字段），裸调用全局搜索 */
+    /* Main is also a stream: this is available (main program stream fields), bare calls search globally */
     VarMap main_fields;
     memset(&main_fields, 0, sizeof(VarMap));
     Value *mself = aalloc(sizeof(Value));
@@ -785,7 +785,7 @@ void run_program(Interp *in) {
     if (r->ref && strcmp(r->ref, NOTHING) != 0) printf("⛔ main stream refused: %s\n", r->ref);
 }
 
-/* 全局裸调用：搜索第一个提供该方法的用户流 */
+/* Global bare call: search for the first user stream providing the method */
 Result *interp_call_global(Interp *in, const char *mname, Value **args, int nargs) {
     for (Stream *t = in->streams; t; t = t->next)
         if (!t->builtin && method_find(t, mname))

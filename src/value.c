@@ -1,14 +1,14 @@
 #include "bio.h"
 
-/* 值 / 请求结果 */
+/* Values / request results */
 Value *mk_num(double d) { Value *v = aalloc(sizeof(Value)); v->kind = V_NUM; v->num = d; return v; }
 
 Value *mk_str(const char *s) { Value *v = aalloc(sizeof(Value)); v->kind = V_STR; v->str = s; return v; }
 
-/* 流引用（V_STREAM）：流作为一等值可传递/当参数 */
+/* Stream reference (V_STREAM): streams are first-class values, passable as arguments */
 Value *mk_streamref(Stream *s) { Value *v = aalloc(sizeof(Value)); v->kind = V_STREAM; v->stream_ref = s; return v; }
 
-/* 字段默认值：string → 空串，[] → 空数组，数值/泛型 → 0 */
+/* Field default value: string → "", [] → empty array, numeric/generic → 0 */
 Value *field_default(const char *type) {
     if (type && strstr(type, "string")) return mk_str("");
     if (type && strstr(type, "[]")) return mk_arr(0);
@@ -76,7 +76,7 @@ void print_value(Value *v) {
             printf("%s", v->stream_ref ? v->stream_ref->name : "(nil stream)");
             break;
         case V_OBJ:
-            /* 数组对象（Array/Vector 类，data 字段=Solid 连续流）显示为数组 */
+            /* Array objects (Array/Vector classes, data field = Solid stream) display as arrays */
             if (v->obj_fields) {
                 Value *d = var_get_layer(v->obj_fields, "data");
                 if (d && d->kind == V_ARR) { print_value(d); break; }
@@ -95,4 +95,3 @@ void print_value(Value *v) {
             break;
     }
 }
-

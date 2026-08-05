@@ -1,14 +1,14 @@
 /*
- * bts.c — BTS (Bio Threads) 线程系统
+ * bts.c — BTS (Bio Threads) thread system
  *
- * 协作式用户线程（ucontext 实现，无抢占）：
- *   BTS::spawn("方法名", 参数...)  → 创建线程，返回线程 id
- *   BTS::yield()                   → 让出 CPU，调度其他就绪线程
- *   BTS::join(id)                  → 等待线程完成并取回其 res/ref
- *   BTS::active()                  → 存活线程数
- *   BTS::self()                    → 当前线程 id（主线程为 0）
+ * Cooperative user threads (ucontext-based, non-preemptive):
+ *   BTS::spawn("method", args...)  → create a thread, returns thread id
+ *   BTS::yield()                   → yield the CPU, schedule other ready threads
+ *   BTS::join(id)                  → wait for the thread to finish and get back its res/ref
+ *   BTS::active()                  → number of alive threads
+ *   BTS::self()                    → current thread id (main thread is 0)
  *
- * 线程执行任意流的裸方法调用（方法名全局搜索）。
+ * A thread executes a bare method call on any stream (method name is searched globally).
  */
 
 #define _XOPEN_SOURCE 700
@@ -20,37 +20,37 @@ typedef struct BThread {
     int id;
     ucontext_t ctx;
     char *stack;
-    int state;               /* 0=就绪 1=运行 2=完成 */
+    int state;               /* 0=ready 1=running 2=done */
     Result *result;
-    const char *mname;       /* 要执行的方法名 */
+    const char *mname;       /* method name to execute */
     Value **args; int nargs;
-    unsigned char round_ran; /* Taskm：本轮已运行 */
-    VarMap area;             /* 线程自己的作用域（跟随 a 解析层） */
+    unsigned char round_ran; /* Taskm: has already run this round */
+    VarMap area;             /* the thread's own scope (followed by the `a` resolution layer) */
     struct BThread *next;
 } BThread;
 
-static BThread *threads = NULL;      /* 线程表 */
-static BThread *current = NULL;      /* 当前运行的线程（NULL=主线程） */
-static ucontext_t sched_ctx;         /* 调度器上下文 */
+static BThread *threads = NULL;      /* thread table */
+static BThread *current = NULL;      /* currently running thread (NULL = main thread) */
+static ucontext_t sched_ctx;         /* scheduler context */
 static int next_id = 1;
-static BThread *boot = NULL;         /* makecontext 启动参数 */
+static BThread *boot = NULL;         /* makecontext startup parameter */
 
-Interp *g_interp = NULL;             /* 全局解释器（bts 线程执行方法用） */
+Interp *g_interp = NULL;             /* global interpreter (used by bts threads to execute methods) */
 
-/* 线程入口 */
+/* thread entry point */
 static void bts_entry(void) {
     BThread *t = boot;
     boot = NULL;
     VarMap *saved_area = g_interp->cur_area;
-    g_interp->cur_area = &t->area;            /* 线程作用域：跟随 a 指向这里 */
+    g_interp->cur_area = &t->area;            /* thread scope: `a` resolution points here */
     t->result = interp_call_global(g_interp, t->mname, t->args, t->nargs);
     g_interp->cur_area = saved_area;
     t->state = 2;
     current = NULL;
-    swapcontext(&t->ctx, &sched_ctx);   /* 回调度器 */
+    swapcontext(&t->ctx, &sched_ctx);   /* back to scheduler */
 }
 
-/* 找线程 */
+/* find a thread */
 static BThread *bts_find(int id) {
     for (BThread *t = threads; t; t = t->next)
         if (t->id == id) return t;
@@ -64,7 +64,7 @@ static int bts_alive(void) {
     return n;
 }
 
-/* 调度一轮：跑所有就绪线程直到全部完成或让出后无就绪 */
+/* run one scheduling pass: run all ready threads until all are done or none is ready after yields */
 static void bts_run(void) {
     int pass;
     do {
@@ -74,7 +74,7 @@ static void bts_run(void) {
                 pass = 1;
                 t->state = 1;
                 current = t;
-                boot = t;                       /* 入口从这里取线程数据 */
+                boot = t;                       /* entry point takes thread data from here */
                 swapcontext(&sched_ctx, &t->ctx);
                 current = NULL;
             }
@@ -82,7 +82,7 @@ static void bts_run(void) {
     } while (pass && bts_alive() > 0);
 }
 
-/* 一轮调度：每个就绪线程跑一次（Taskm 用，配合间隔形成时间片轮转） */
+/* one scheduling round: run each ready thread once (used by Taskm, combined with the interval to form round-robin time slicing) */
 static void bts_round(void) {
     for (BThread *t = threads; t; t = t->next) t->round_ran = 0;
     for (BThread *t = threads; t; t = t->next) {
@@ -97,7 +97,7 @@ static void bts_round(void) {
     }
 }
 
-/* 调度到目标线程完成（join 用） */
+/* schedule until the target thread finishes (used by join) */
 static void bts_run_until(BThread *target) {
     while (target->state != 2 && bts_alive() > 0) {
         int ran = 0;
@@ -111,11 +111,11 @@ static void bts_run_until(BThread *target) {
                 current = NULL;
             }
         }
-        if (!ran) break;   /* 无就绪线程且目标未完成 → 死等保护 */
+        if (!ran) break;   /* no ready threads and the target isn't done → guard against deadlock */
     }
 }
 
-/* BTS 内置流方法 */
+/* BTS built-in stream methods */
 Result *bts_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "spawn") == 0) {
         if (nargs < 1 || args[0]->kind != V_STR)
@@ -136,17 +136,17 @@ Result *bts_request(const char *method, Value **args, int nargs) {
         t->ctx.uc_stack.ss_sp = t->stack;
         t->ctx.uc_stack.ss_size = 65536;
         t->ctx.uc_link = NULL;
-        makecontext(&t->ctx, bts_entry, 0);   /* 入口数据 boot 在调度时设置 */
+        makecontext(&t->ctx, bts_entry, 0);   /* entry data (boot) is set at scheduling time */
         t->next = threads;
         threads = t;
         return mk_res(mk_num((double)t->id));
     }
     if (strcmp(method, "yield") == 0) {
         if (current) {
-            current->state = 0;                   /* 线程让出：现场存 t->ctx，切回调度循环 */
+            current->state = 0;                   /* thread yields: context is saved in t->ctx, switch back to the scheduling loop */
             swapcontext(&current->ctx, &sched_ctx);
         } else {
-            bts_run();                            /* 主线程让出：直接跑一轮调度循环 */
+            bts_run();                            /* main thread yields: just run one scheduling pass */
         }
         return mk_res(mk_str(""));
     }
@@ -171,12 +171,12 @@ Result *bts_request(const char *method, Value **args, int nargs) {
 }
 
 
-/* ═══════════════ Taskm：任务管理器 ═══════════════
- * Taskm::add("方法名", 参数...)  注册任务（复用 Threads 线程）
- * Taskm::interval(毫秒)         设置轮转间隔（默认 0）
- * Taskm::run()                 自动调度循环：轮流跑所有任务直到完成，轮间等待 interval
- * Taskm::stop()                停止调度循环（线程内调用后让出即可）
- * Taskm::active()              未完成任务数
+/* ═══════════════ Taskm: task manager ═══════════════
+ * Taskm::add("method", args...)  register a task (reuses Threads threads)
+ * Taskm::interval(ms)            set the round-robin interval (default 0)
+ * Taskm::run()                   automatic scheduling loop: run all tasks in rotation until done, waiting for interval between rounds
+ * Taskm::stop()                  stop the scheduling loop (call inside a thread, then yield)
+ * Taskm::active()                number of unfinished tasks
  */
 static int taskm_running = 0;
 static long taskm_interval_ns = 0;
@@ -193,7 +193,7 @@ Result *taskm_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "add") == 0) {
         if (nargs < 1 || args[0]->kind != V_STR)
             return mk_ref("Taskm refused: add requires a method name string (Taskm::add(\"name\", args...))");
-        return bts_request("spawn", args, nargs);   /* 复用线程创建 */
+        return bts_request("spawn", args, nargs);   /* reuse thread creation */
     }
     if (strcmp(method, "interval") == 0) {
         if (nargs < 1 || args[0]->kind != V_NUM)
@@ -205,8 +205,8 @@ Result *taskm_request(const char *method, Value **args, int nargs) {
         if (taskm_running) return mk_ref("Taskm refused: scheduler loop already running");
         taskm_running = 1;
         while (taskm_running && bts_alive() > 0) {
-            bts_round();              /* 每线程跑一次（线程内 yield 会提前换出） */
-            taskm_sleep();            /* 轮间间隔 */
+            bts_round();              /* run each thread once (a yield inside a thread swaps out early) */
+            taskm_sleep();            /* interval between rounds */
         }
         taskm_running = 0;
         return mk_res(mk_str(""));

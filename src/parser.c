@@ -1,7 +1,7 @@
 #include "bio.h"
 
-/* 语法分析 */
-/* 越界安全：始终停在 T_EOF，错误恢复时 next() 不会读到数组外 */
+/* Parsing */
+/* Out-of-bounds safe: always stops at T_EOF; during error recovery next() never reads past the end of the array */
 Tok *peek(Parser *p) {
     if (p->i >= p->n) return &p->t[p->n - 1];
     return &p->t[p->i];
@@ -31,7 +31,7 @@ const char *expect_id(Parser *p) {
     return next(p)->text;
 }
 
-/* 方法名：允许关键字 new（如 Array::new / Obj::new） */
+/* Method name: the keyword new is allowed (e.g. Array::new / Obj::new) */
 const char *expect_method_name(Parser *p) {
     if (peek(p)->kind == T_KW && strcmp(peek(p)->text, "new") == 0) return next(p)->text;
     return expect_id(p);
@@ -62,12 +62,12 @@ Node *parse_primary(Parser *p) {
     if (t->kind == T_NUM) { e = mk_node(N_NUM); e->num = t->num; }
     else if (t->kind == T_STR) { e = mk_node(N_STR); e->str = t->text; }
     else if (t->kind == T_KW && strcmp(t->text, "new") == 0) {
-        /* new type[12] → 数组字面量（类型通用，含自定义类）：Obj::new("Array", n) */
+        /* new type[12] → array literal (type-agnostic, includes user classes): Obj::new("Array", n) */
         if (peek(p)->kind == T_ID &&
             p->i + 1 < p->n && p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "[") == 0) {
-            next(p);                      /* 类型 int / Hero */
+            next(p);                      /* type int / Hero */
             next(p);                      /* [ */
-            Node *sz = parse_expr(p);     /* 长度 */
+            Node *sz = parse_expr(p);     /* length */
             expect_op(p, "]");
             e = mk_node(N_CALL);
             e->qual = "Obj";
@@ -78,7 +78,7 @@ Node *parse_primary(Parser *p) {
             e->args[e->nargs++] = sz;
             goto prop_chain;
         }
-        /* new Class(args...) → Obj::new("Class", args...)：分叉类流 + 自动调 __init__ */
+        /* new Class(args...) → Obj::new("Class", args...): fork a class stream + automatically call __init__ */
         const char *cls = expect_id(p);
         expect_op(p, "(");
         e = mk_node(N_CALL);
@@ -94,15 +94,15 @@ Node *parse_primary(Parser *p) {
         expect_op(p, ")");
     }
     else if (t->kind == T_KW && (strcmp(t->text, "res") == 0 || strcmp(t->text, "cause") == 0)) {
-        /* res X / cause X —— 前缀提取运算符（原稿：res add(a,b) 取结果，cause add(a,b) 取拒绝原因） */
+        /* res X / cause X — prefix extraction operator (original spec: res add(a,b) takes the result, cause add(a,b) takes the refusal reason) */
         Node *u = mk_node(N_UNWRAP);
         u->op = t->text;          /* "res" / "cause" */
-        u->l = parse_primary(p);  /* 目标：调用/变量/字面量等 */
+        u->l = parse_primary(p);  /* target: call / variable / literal, etc. */
         e = u;
     }
     else if (t->kind == T_ID) {
         if (is_op(p, "::")) {
-            /* qual::name(...) 调用 或 qual::name 属性访问（this::hp） */
+            /* qual::name(...) call, or qual::name property access (this::hp) */
             Node *base = mk_node(N_VAR);
             base->name = t->text;
             next(p); /* :: */
@@ -124,10 +124,10 @@ Node *parse_primary(Parser *p) {
                 e->name = nm;
             }
         } else if (is_op(p, "(")) {
-            /* 裸函数调用表达式: add(a, b) */
+            /* bare function call expression: add(a, b) */
             e = parse_call_plain(p, t->text);
         } else if (is_op(p, "[")) {
-            /* 数组下标读取: a[i] */
+            /* array index read: a[i] */
             Node *ix = mk_node(N_INDEX);
             Node *base = mk_node(N_VAR); base->name = t->text;
             next(p); /* [ */
@@ -140,7 +140,7 @@ Node *parse_primary(Parser *p) {
         }
     }
     else if (t->kind == T_OP && strcmp(t->text, "&") == 0) {
-        /* 智能引用: &<权限> <跟随> <真名>   或   二进制调用: &func(...) */
+        /* smart reference: &<permission> <follow> <target name>    or   binary call: &func(...) */
         if (peek(p)->kind == T_ID && p->i + 2 < p->n && p->t[p->i + 2].kind == T_ID &&
             !(p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "(") == 0)) {
             Node *rf = mk_node(N_REF);
@@ -152,7 +152,7 @@ Node *parse_primary(Parser *p) {
             if (!valid_follow(rf->ref_follow)) {
                 fprintf(stderr, "syntax error: invalid reference follow %s (should be u/f/a)\n", rf->ref_follow); p->err = 1;
             }
-            rf->ref_name = expect_id(p);       /* 真名 */
+            rf->ref_name = expect_id(p);       /* target name */
             e = rf;
             return e;
         }
@@ -175,7 +175,7 @@ Node *parse_primary(Parser *p) {
         fprintf(stderr, "syntax error: cannot parse expression %s\n", t->text); p->err = 1;
         return mk_node(N_NUM);
     }
-    /* 属性访问链: .res / .ref / .字段 */
+    /* property access chain: .res / .ref / .field */
 prop_chain:
     while (is_op(p, ".")) {
         next(p);
@@ -199,7 +199,7 @@ Node *parse_expr(Parser *p) {
         b->op = next(p)->text; b->l = left; b->r = parse_primary(p);
         left = b;
     }
-    /* 比较运算符（简化：最后一级） */
+    /* comparison operators (simplified: last precedence level) */
     while (peek(p)->kind == T_OP &&
            (strcmp(peek(p)->text, "==") == 0 || strcmp(peek(p)->text, "!=") == 0 ||
             strcmp(peek(p)->text, "<=") == 0 || strcmp(peek(p)->text, ">=") == 0 ||
@@ -211,7 +211,7 @@ Node *parse_expr(Parser *p) {
     return left;
 }
 
-/* 裸调用：ident(args) —— qual 留空，运行时全局找方法 */
+/* bare call: ident(args) — qual left empty, method looked up globally at runtime */
 Node *parse_call_plain(Parser *p, const char *fname) {
     Node *e = mk_node(N_CALL);
     e->qual = NULL;
@@ -256,7 +256,7 @@ Node *parse_if(Parser *p) {
     if (peek_kw(p, "else")) {
         next(p);
         n->has_else = 1;
-        if (peek_kw(p, "if")) {                 /* else if → else 分支放一个 N_IF */
+        if (peek_kw(p, "if")) {                 /* else if → put an N_IF in the else branch */
             n->else_stmts = aalloc(sizeof(Node *));
             n->else_stmts[0] = parse_if(p);
             n->n_else = 1;
@@ -283,9 +283,9 @@ Node *parse_for(Parser *p) {
     next(p); /* for */
     Node *n = mk_node(N_FOR);
     expect_op(p, "(");
-    if (is_op(p, ";")) next(p);                 /* for(;;) 空 init */
+    if (is_op(p, ";")) next(p);                 /* for(;;) empty init */
     else n->init = parse_stmt(p);
-    if (is_op(p, ";")) next(p);                 /* 空条件 */
+    if (is_op(p, ";")) next(p);                 /* empty condition */
     else { n->cond = parse_expr(p); expect_op(p, ";"); }
     if (!is_op(p, ")")) n->update = parse_stmt(p);
     expect_op(p, ")");
@@ -309,7 +309,7 @@ Node *parse_stmt(Parser *p) {
                             strcmp(t->text, "cause") == 0)) {
         next(p);
         Node *n = mk_node(N_RET);
-        n->retkind = strcmp(t->text, "cause") == 0 ? "ref" : t->text;   /* 原稿: cause = 拒绝 */
+        n->retkind = strcmp(t->text, "cause") == 0 ? "ref" : t->text;   /* original spec: cause = refusal */
         n->nrets = 0;
         if (strcmp(t->text, "ref") == 0) {
             if (!(peek(p)->kind == T_KW && strcmp(peek(p)->text, "cause") == 0)) {
@@ -320,7 +320,7 @@ Node *parse_stmt(Parser *p) {
         }
         n->expr = parse_expr(p);
         if (strcmp(t->text, "res") == 0 && is_op(p, ",")) {
-            /* res 多值: res a, b, c; → 返回数组 */
+            /* res multi-value: res a, b, c; → returns an array */
             Node **rs = aalloc(sizeof(Node *) * 64);
             int nr = 0;
             rs[nr++] = n->expr;
@@ -334,7 +334,7 @@ Node *parse_stmt(Parser *p) {
         return n;
     }
     if (t->kind == T_KW && (strcmp(t->text, "const") == 0 || strcmp(t->text, "thread") == 0)) {
-        /* 变量修饰（原稿）：const int x = 10;（→ Constantstream） / thread int x = 10;（→ 线程变量） */
+        /* variable modifier (original spec): const int x = 10; (→ Constantstream) / thread int x = 10; (→ thread variable) */
         int is_c = strcmp(t->text, "const") == 0;
         next(p); /* const / thread */
         if (peek(p)->kind != T_ID || !is_type_name(peek(p)->text)) {
@@ -342,7 +342,7 @@ Node *parse_stmt(Parser *p) {
             p->err = 1;
             return mk_node(N_BREAK);
         }
-        next(p); /* 类型 */
+        next(p); /* type */
         Node *n = mk_node(N_ASSIGN);
         n->is_const = is_c;
         n->is_thread = !is_c;
@@ -378,10 +378,10 @@ Node *parse_stmt(Parser *p) {
         return n;
     }
     if (t->kind == T_ID) {
-        /* 引用变量声明（原稿 realme &权限 跟随 类型）：名字 &权限 跟随 [类型] [= 初值]; */
+        /* reference variable declaration (original spec realme &permission follow type): name &permission follow [type] [= initial value]; */
         if (p->i + 2 < p->n && p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "&") == 0) {
             Node *n = mk_node(N_REALME);
-            n->name = next(p)->text;              /* 名字 */
+            n->name = next(p)->text;              /* name */
             next(p);                              /* & */
             n->ref_perm = next(p)->text;
             if (!valid_perm(n->ref_perm)) {
@@ -392,17 +392,17 @@ Node *parse_stmt(Parser *p) {
                 fprintf(stderr, "syntax error: invalid reference follow %s (should be u/f/a)\n", n->ref_follow); p->err = 1;
             }
             if (peek(p)->kind == T_ID && is_type_name(peek(p)->text)) {
-                next(p);                          /* 类型（校验用，可带 []） */
+                next(p);                          /* type (for validation, may include []) */
                 if (is_op(p, "[")) { next(p); expect_op(p, "]"); }
             }
-            if (is_op(p, "=")) {                  /* 初值：写入跟随层同名槽位 */
+            if (is_op(p, "=")) {                  /* initial value: written to the same-name slot in the follow layer */
                 next(p);
                 n->init = parse_expr(p);
             }
             expect_op(p, ";");
             return n;
         }
-        /* 数组类型变量声明: int[] a = expr; / int[] a;  （须先于数组下标判断） */
+        /* array-typed variable declaration: int[] a = expr; / int[] a;  (must be checked before the array-index case) */
         if (p->i + 2 < p->n && p->t[p->i].kind == T_ID && is_type_name(p->t[p->i].text) &&
             p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "[") == 0 &&
             p->t[p->i + 2].kind == T_OP && strcmp(p->t[p->i + 2].text, "]") == 0) {
@@ -416,12 +416,12 @@ Node *parse_stmt(Parser *p) {
             expect_op(p, ";");
             return n;
         }
-        /* 自增自减: i++; / i--;  （转为 i = i + 1; / i = i - 1;） */
+        /* increment/decrement: i++; / i--;  (rewritten as i = i + 1; / i = i - 1;) */
         if (p->i + 1 < p->n && p->t[p->i + 1].kind == T_OP &&
             (strcmp(p->t[p->i + 1].text, "++") == 0 || strcmp(p->t[p->i + 1].text, "--") == 0)) {
-            const char *vn = t->text;              /* 变量名 = 当前 token（i） */
-            const char *inc = p->t[p->i + 1].text; /* ++ / --（下一个 token） */
-            next(p); next(p);                      /* 消费 i 和 ++ */
+            const char *vn = t->text;              /* variable name = current token (i) */
+            const char *inc = p->t[p->i + 1].text; /* ++ / -- (next token) */
+            next(p); next(p);                      /* consume i and ++ */
             Node *n = mk_node(N_ASSIGN);
             n->name = vn;
             n->op = "=";
@@ -431,13 +431,13 @@ Node *parse_stmt(Parser *p) {
             Node *one = mk_node(N_NUM); one->num = 1;
             b->l = lv; b->r = one;
             n->expr = b;
-            if (!is_op(p, ";")) return n;   /* for 更新处 i++) 允许无分号 */
+            if (!is_op(p, ";")) return n;   /* semicolon optional in the for-update clause, e.g. i++) */
             next(p);
             return n;
         }
-        /* 数组下标赋值: a[i] = v; / a[i] += v; */
+        /* array index assignment: a[i] = v; / a[i] += v; */
         if (p->i + 1 < p->n && p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "[") == 0) {
-            const char *arr = next(p)->text;         /* 数组名 */
+            const char *arr = next(p)->text;         /* array name */
             next(p);                                 /* [ */
             Node *idx = parse_expr(p);
             expect_op(p, "]");
@@ -453,13 +453,13 @@ Node *parse_stmt(Parser *p) {
                 expect_op(p, ";");
                 return n;
             }
-            /* 仅读取（无副作用） */
+            /* read-only (no side effects) */
             Node *n = mk_node(N_CALLSTMT);
             n->l = tgt;
             expect_op(p, ";");
             return n;
         }
-        /* 赋值: x = e;  或  类型前缀: int x = e;  或  复合赋值: x += e; / x -= e; 等 */
+        /* assignment: x = e;   or   type prefix: int x = e;   or   compound assignment: x += e; / x -= e; etc. */
         if (p->i + 1 < p->n && p->t[p->i + 1].kind == T_OP && is_assign_op(p->t[p->i + 1].text)) {
             Node *n = mk_node(N_ASSIGN);
             n->name = next(p)->text;
@@ -470,22 +470,22 @@ Node *parse_stmt(Parser *p) {
         }
         if (p->i + 2 < p->n && p->t[p->i + 1].kind == T_ID && p->t[p->i + 2].kind == T_OP &&
             is_assign_op(p->t[p->i + 2].text)) {
-            next(p); /* 类型 */
+            next(p); /* type */
             Node *n = mk_node(N_ASSIGN);
-            n->name = next(p)->text;   /* 变量名 */
-            n->op = next(p)->text;     /* = / += / -= 等 */
+            n->name = next(p)->text;   /* variable name */
+            n->op = next(p)->text;     /* = / += / -= etc. */
             n->expr = parse_expr(p);
             expect_op(p, ";");
             return n;
         }
         if (p->i + 1 < p->n && p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "::") == 0) {
-            const char *qual = next(p)->text;   /* 流名 / this */
+            const char *qual = next(p)->text;   /* stream name / this */
             next(p); /* :: */
             const char *nm = expect_method_name(p);
             if (is_op(p, "=") || is_op(p, "+=") || is_op(p, "-=") || is_op(p, "*=") ||
-                is_op(p, "/=") || is_op(p, "%=")) {   /* this::attr = v; / this::attr += v; 等 */
+                is_op(p, "/=") || is_op(p, "%=")) {   /* this::attr = v; / this::attr += v; etc. */
                 Node *n = mk_node(N_ASSIGN);
-                n->op = next(p)->text;   /* = / += / -= 等 */
+                n->op = next(p)->text;   /* = / += / -= etc. */
                 Node *tgt = mk_node(N_PROP);
                 Node *base = mk_node(N_VAR);
                 base->name = qual;
@@ -512,7 +512,7 @@ Node *parse_stmt(Parser *p) {
             return n;
         }
         if (p->i + 1 < p->n && p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "(") == 0) {
-            /* 裸函数调用语句: add(a, b); */
+            /* bare function call statement: add(a, b); */
             const char *fname = next(p)->text;
             Node *n = mk_node(N_CALLSTMT);
             n->l = parse_call_plain(p, fname);
@@ -532,7 +532,7 @@ Node **parse_stmts_until(Parser *p, const char *end, int *n) {
         stmts[n2++] = parse_stmt(p);
         if (p->err) break;
     }
-    if (!p->err) next(p);   /* 消费结束符 */
+    if (!p->err) next(p);   /* consume the terminator */
     *n = n2;
     return stmts;
 }
@@ -542,34 +542,34 @@ static int is_type_name(const char *s) {
            strcmp(s, "string") == 0 || strcmp(s, "char") == 0;
 }
 
-/* 智能引用权限：r 读 / w 写 / rw 读写 / m 可移动 */
+/* smart reference permissions: r read / w write / rw read-write / m movable */
 static int valid_perm(const char *s) {
     return strcmp(s, "r") == 0 || strcmp(s, "w") == 0 || strcmp(s, "rw") == 0 || strcmp(s, "m") == 0;
 }
 
-/* 智能引用跟随层：u 程序级(Unistream) / f 方法级(Functionstream) / a 作用域级(Areastream) */
+/* smart reference follow layer: u program-level (Unistream) / f method-level (Functionstream) / a scope-level (Areastream) */
 static int valid_follow(const char *s) {
     return strcmp(s, "u") == 0 || strcmp(s, "f") == 0 || strcmp(s, "a") == 0;
 }
 
-/* 赋值运算符：= / 复合赋值 += -= *= /= %= */
+/* assignment operators: = / compound assignments += -= *= /= %= */
 static int is_assign_op(const char *s) {
     return strcmp(s, "=") == 0 || strcmp(s, "+=") == 0 || strcmp(s, "-=") == 0 ||
            strcmp(s, "*=") == 0 || strcmp(s, "/=") == 0 || strcmp(s, "%=") == 0;
 }
 
-/* 参数语法（唯一）：参数名 参数类型  如 void add(a int, b int)；数组 a int[]；
- * 类型可以是基本类型，也可以是任意类型名/流名（如 void show(cio CIO)）。
- * 也支持智能引用修饰：void show(&r f io IO) —— &权限 跟随 参数名 类型。 */
+/* Parameter syntax (only form): parameter name parameter type, e.g. void add(a int, b int); array a int[];
+ * The type can be a primitive type, or any type name / stream name (e.g. void show(cio CIO)).
+ * Smart reference modifiers are also supported: void show(&r f io IO) — &permission follow parameter name type. */
 void parse_params(Parser *p, const char ***params, int *n) {
     const char **ps = aalloc(sizeof(char *) * 64);
     int n2 = 0;
     while (!is_op(p, ")") && !p->err) {
-        /* &权限 跟随 参数名 类型 */
+        /* &permission follow parameter name type */
         if (is_op(p, "&")) {
             next(p);
-            next(p);                      /* 权限 r/w/rw/m */
-            next(p);                      /* 跟随 u/f/a */
+            next(p);                      /* permission r/w/rw/m */
+            next(p);                      /* follow u/f/a */
         }
         Tok *t = next(p);
         if (t->kind == T_ID) {
@@ -579,7 +579,7 @@ void parse_params(Parser *p, const char ***params, int *n) {
             }
             ps[n2++] = t->text;
             if (is_op(p, "[")) { next(p); expect_op(p, "]"); }
-            /* 类型：基本类型 或 任意标识符（流名/类名） */
+            /* type: primitive type or any identifier (stream name / class name) */
             if (peek(p)->kind == T_ID) {
                 if (is_type_name(peek(p)->text)) next(p);
                 else { next(p); if (is_op(p, "[")) { next(p); expect_op(p, "]"); } }
@@ -590,7 +590,7 @@ void parse_params(Parser *p, const char ***params, int *n) {
     *params = ps; *n = n2;
 }
 
-/* 返回类型：void 或类型名（可带 [] 数组后缀，如 int[]）。非方法开头返回 NULL */
+/* return type: void or a type name (may carry a [] array suffix, e.g. int[]). Returns NULL when not at the start of a method */
 static const char *parse_ret_type(Parser *p) {
     Tok *t = peek(p);
     if (t->kind == T_KW && strcmp(t->text, "void") == 0) {
@@ -629,14 +629,14 @@ void parse_methods(Parser *p, Method **methods, int *n) {
     *methods = ms; *n = n2;
 }
 
-/* ═══════════════ 成员解析（类/签名流/分叉流通用）═══════════════
- * 方法与字段可任意顺序交错（顺序不严格），字段支持逗号分隔：
- *   void m(params) { ... }     方法（实现）
- *   void m(params);            方法（签名）
- *   int add(a int) { ... }     带返回类型的方法
- *   int x, y;  int[] a;  string s;   字段（类型 名字[, 名字...];）
- *   type T;                    泛型类型声明（原型阶段只登记名字）
- *   T n;  T[] a;  T m() {...}  泛型风格字段/方法
+/* ═══════════════ Member parsing (common to classes / signature streams / forked streams) ═══════════════
+ * Methods and fields may interleave in any order (the order is not strict); fields support comma separation:
+ *   void m(params) { ... }     method (implementation)
+ *   void m(params);            method (signature)
+ *   int add(a int) { ... }     method with a return type
+ *   int x, y;  int[] a;  string s;   field (type name[, name...];)
+ *   type T;                    generic type declaration (only the name is registered at the prototype stage)
+ *   T n;  T[] a;  T m() {...}  generic-style field/method
  */
 static void parse_members(Parser *p, Method **methods, int *nmethods, Field **fields, int *nfields) {
     Method *ms = aalloc(sizeof(Method) * 128);
@@ -657,10 +657,10 @@ static void parse_members(Parser *p, Method **methods, int *nmethods, Field **fi
                 m->stmts = parse_stmts_until(p, "}", &m->nstmts);
             } else {
                 expect_op(p, ";");
-                m->stmts = NULL; m->nstmts = 0;   /* 签名 */
+                m->stmts = NULL; m->nstmts = 0;   /* signature */
             }
         } else if (t->kind == T_ID && is_type_name(t->text)) {
-            /* 基本类型：返回类型的方法 或 字段（int x, y; / int[] a;） */
+            /* primitive type: a method with a return type, or a field (int x, y; / int[] a;) */
             const char *rt = parse_ret_type(p);
             const char *name = expect_id(p);
             if (is_op(p, "(")) {
@@ -682,10 +682,10 @@ static void parse_members(Parser *p, Method **methods, int *nmethods, Field **fi
             }
         } else if (t->kind == T_KW && strcmp(t->text, "type") == 0) {
             next(p);                       /* type */
-            expect_id(p);                  /* 泛型名（原型阶段不实例化） */
+            expect_id(p);                  /* generic name (not instantiated at the prototype stage) */
             expect_op(p, ";");
         } else if (t->kind == T_ID) {
-            /* 泛型风格：T n; / T[] a; / T m() {...} */
+            /* generic style: T n; / T[] a; / T m() {...} */
             const char *ty = next(p)->text;
             int is_arr = 0;
             if (is_op(p, "[")) { next(p); expect_op(p, "]"); is_arr = 1; }
@@ -714,12 +714,12 @@ static void parse_members(Parser *p, Method **methods, int *nmethods, Field **fi
             p->err = 1; break;
         }
     }
-    if (!p->err) next(p);   /* 消费 } */
+    if (!p->err) next(p);   /* consume } */
     *methods = ms; *nmethods = nm;
     *fields = fs; *nfields = nf;
 }
 
-/* 跳过 { ... } 块（need 假设的细节，原型阶段只登记名字） */
+/* skip { ... } block (details assumed by need; only names are registered at the prototype stage) */
 static void skip_block(Parser *p) {
     if (!is_op(p, "{")) return;
     int depth = 0;
@@ -740,14 +740,14 @@ Decl *parse_program(Parser *p) {
         d->next = NULL;
         if (t->kind == T_KW && strcmp(t->text, "program") == 0) {
             next(p); expect_id(p); expect_op(p, ";");
-            continue;   /* 原型里只做声明，不区分 main/utils */
+            continue;   /* the prototype only declares it; main/utils are not distinguished */
         }
         if (t->kind == T_KW && strcmp(t->text, "const") == 0) {
-            /* 顶层 const 声明（原稿：const → Constantstream 公共常量） */
+            /* top-level const declaration (original spec: const → Constantstream public constant) */
             next(p);
             if (peek(p)->kind != T_ID || !is_type_name(peek(p)->text)) {
                 fprintf(stderr, "syntax error: const requires a type (e.g. const int x = 10;)\n"); p->err = 1;
-            } else next(p);   /* 类型 */
+            } else next(p);   /* type */
             d->kind = D_CONST;
             d->name = expect_id(p);
             expect_op(p, "=");
@@ -767,7 +767,7 @@ Decl *parse_program(Parser *p) {
                        strcmp(k->text, "Class") == 0) {
                 d->kind = D_NEED; d->needkind = k->text;
                 d->name = expect_id(p);
-                if (is_op(p, "{")) {           /* 原稿: need Class ... {...}; */
+                if (is_op(p, "{")) {           /* original spec: need Class ... {...}; */
                     skip_block(p);
                     if (is_op(p, ";")) next(p);
                 } else expect_op(p, ";");
@@ -778,7 +778,7 @@ Decl *parse_program(Parser *p) {
         else if (t->kind == T_KW && strcmp(t->text, "Stream") == 0) {
             next(p);
             d->name = expect_id(p);
-            if (is_op(p, "&")) {                 /* Stream <名> & <二进制库文件> {} */
+            if (is_op(p, "&")) {                 /* Stream <name> & <binary library file> {} */
                 next(p);
                 d->kind = D_BIN;
                 Tok *ft = next(p);
@@ -787,7 +787,7 @@ Decl *parse_program(Parser *p) {
                 }
                 d->file = ft->text;
                 expect_op(p, "{");
-                parse_stmts_until(p, "}", &(int){0});   /* 已消费 } */
+                parse_stmts_until(p, "}", &(int){0});   /* } already consumed */
                 goto decl_done;
             }
             d->kind = D_SIG;
@@ -799,7 +799,7 @@ Decl *parse_program(Parser *p) {
             d->kind = D_CLASS;
             d->name = expect_id(p);
             expect_op(p, "{");
-            /* 方法与字段统一解析（Objstream 用方法，对象属性用字段） */
+            /* methods and fields parsed uniformly (Objstream uses methods; object properties use fields) */
             parse_members(p, &d->methods, &d->nmethods, &d->fields, &d->nfields);
         }
         else if (t->kind == T_KW && strcmp(t->text, "Main") == 0) {
@@ -812,7 +812,7 @@ Decl *parse_program(Parser *p) {
             continue;
         }
         else if (t->kind == T_ID) {
-            /* 分叉: 签名流 实现流 { void m() {...} }  （可自定义字段） */
+            /* fork: signature stream implementation stream { void m() {...} }  (custom fields allowed) */
             d->kind = D_FORK;
             d->sig = expect_id(p);
             d->name = expect_id(p);
@@ -825,7 +825,7 @@ Decl *parse_program(Parser *p) {
     decl_done:
         if (tail) { tail->next = d; tail = d; } else { head = tail = d; }
     }
-    /* 把 Main 接在 decls 后面（分开存，便于运行） */
+    /* append Main after the decls (stored separately, for ease of execution) */
     if (mains) {
         if (tail) tail->next = mains; else head = mains;
     }

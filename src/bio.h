@@ -1,4 +1,4 @@
-/* bio.h — BioLang 解释器公共头 */
+/* bio.h — BioLang interpreter public header */
 #ifndef BIO_H
 #define BIO_H
 
@@ -24,14 +24,14 @@ typedef struct Value {
     struct Value **items;  /* kind == V_ARR */
     int len;               /* V_ARR */
     int cap;               /* V_ARR */
-    int head;              /* V_ARR: Solid 连续流头指针 */
+    int head;              /* V_ARR: Solid stream head pointer */
     Result *res;          /* kind == V_RES */
     const char *ref_perm;  /* V_REF: r / w / rw */
     const char *ref_follow;/* V_REF: u / m / a */
-    const char *ref_name;  /* V_REF: 目标真名 */
-    const char *obj_cls;   /* V_OBJ: 类名 */
-    struct VarMap *obj_fields;  /* V_OBJ: 对象字段（属性） */
-    struct Stream *stream_ref;  /* V_STREAM: 流引用（CIO/FIO/... 作为参数传递） */
+    const char *ref_name;  /* V_REF: target name */
+    const char *obj_cls;   /* V_OBJ: class name */
+    struct VarMap *obj_fields;  /* V_OBJ: object fields (attributes) */
+    struct Stream *stream_ref;  /* V_STREAM: stream reference (CIO/FIO/... passed as an argument) */
 } Value;
 
 struct Result {
@@ -43,8 +43,8 @@ struct VarMap {
     const char *names[256];
     Value *vals[256];
     int n;
-    struct VarMap *parent;   /* 作用域链：方法 → 线程作用域(area) → ... */
-    int is_area;             /* 1 = 线程/主线程作用域层（跟随 a 的解析层） */
+    struct VarMap *parent;   /* scope chain: method → thread scope (area) → ... */
+    int is_area;             /* 1 = thread/main-thread scope layer (the layer 'a' follows) */
 };
 
 typedef struct { Result *ret; int brk; int cont; } Flow;
@@ -59,68 +59,68 @@ struct Node {
     NodeKind kind;
     double num;
     const char *str;          /* N_STR */
-    const char *name;         /* N_VAR / N_ASSIGN 变量名 / N_PROP 属性名 */
-    const char *op;           /* N_BINOP 运算符 / N_ASSIGN 赋值运算符 / N_UNWRAP 提取("res"/"cause") */
-    Node *l, *r;              /* N_BINOP / N_PROP(base) / N_INDEX(base,idx) / N_UNWRAP(目标) */
-    const char *qual;         /* N_CALL: 流名 */
-    const char *mname;        /* N_CALL: 方法名 */
+    const char *name;         /* N_VAR / N_ASSIGN var name / N_PROP property name */
+    const char *op;           /* N_BINOP operator / N_ASSIGN assignment operator / N_UNWRAP extractor ("res"/"cause") */
+    Node *l, *r;              /* N_BINOP / N_PROP(base) / N_INDEX(base,idx) / N_UNWRAP(target) */
+    const char *qual;         /* N_CALL: stream name */
+    const char *mname;        /* N_CALL: method name */
     Node **args; int nargs;   /* N_CALL */
-    Node *expr;               /* N_ASSIGN / N_RET(单值) */
-    Node *target;             /* N_ASSIGN: 属性左值（this::base = v 时非 NULL） */
-    int is_const;             /* N_ASSIGN: const 修饰（→ Constantstream） */
-    int is_thread;            /* N_ASSIGN: thread 修饰（→ 线程变量） */
-    Node **rets; int nrets;   /* N_RET: res 多值（res a, b, c → 数组） */
+    Node *expr;               /* N_ASSIGN / N_RET (single value) */
+    Node *target;             /* N_ASSIGN: property lvalue (non-NULL for this::base = v) */
+    int is_const;             /* N_ASSIGN: const modifier (→ Constantstream) */
+    int is_thread;            /* N_ASSIGN: thread modifier (→ thread variable) */
+    Node **rets; int nrets;   /* N_RET: res multi-values (res a, b, c → array) */
     const char *retkind;      /* N_RET: "res" / "ref" */
     const char *ref_perm;     /* N_REF: r / w / rw */
-    const char *ref_follow;   /* N_REF: u / m / a */
-    const char *ref_name;     /* N_REF: 目标真名 */
-    Node *init;               /* N_FOR: 初始化语句 */
-    Node *cond;               /* N_IF / N_WHILE / N_FOR: 条件 */
-    Node *update;             /* N_FOR: 更新语句 */
-    Node **stmts; int nstmts; /* 语句块 */
+    const char *ref_follow;   /* N_REF: u / f / a */
+    const char *ref_name;     /* N_REF: target name */
+    Node *init;               /* N_FOR: init statement */
+    Node *cond;               /* N_IF / N_WHILE / N_FOR: condition */
+    Node *update;             /* N_FOR: update statement */
+    Node **stmts; int nstmts; /* statement block */
     int has_else;             /* N_IF */
     Node **else_stmts; int n_else;
 };
 
 typedef struct Method {
     const char *name;
-    const char *ret_type;      /* void / int / float / double / string / char / int[] 等 */
+    const char *ret_type;      /* void / int / float / double / string / char / int[] etc. */
     const char **params; int nparams;
     Node **stmts; int nstmts;
-    int builtin;               /* 非 0 = 内置实现（如 B_ARS），无 stmts */
+    int builtin;               /* non-zero = builtin implementation (e.g. B_ARS), no stmts */
 } Method;
 
-/* 字段声明（类/流的属性，原稿：每个对象/流储存各种属性） */
+/* Field declaration (class/stream attributes; the original spec: every object/stream stores its own attributes) */
 typedef struct Field {
     const char *name;
-    const char *type;          /* int / string / int[] / T（泛型）等 */
+    const char *type;          /* int / string / int[] / T (generic) etc. */
 } Field;
 
 typedef enum { D_NEED, D_SIG, D_FORK, D_MAIN, D_BIN, D_CLASS, D_CONST } DeclKind;
 
 typedef struct Decl {
     DeclKind kind;
-    const char *name;          /* need 名 / 签名流名 / 实现名 */
+    const char *name;          /* need name / signature stream name / implementation name */
     const char *needkind;      /* D_NEED: value/function/stream/Class */
-    const char *sig;           /* D_FORK: 签名流名 */
-    const char *file;          /* D_BIN: 二进制库文件路径 */
+    const char *sig;           /* D_FORK: signature stream name */
+    const char *file;          /* D_BIN: binary library file path */
     Method *methods; int nmethods;
-    Field *fields; int nfields;/* 声明字段（类/流），对象/流创建时物化 */
-    Node *init;               /* D_CONST: 顶层 const 初值表达式 */
+    Field *fields; int nfields;/* declared fields (class/stream), materialized when object/stream is created */
+    Node *init;               /* D_CONST: top-level const initializer expression */
     struct Decl *next;
 } Decl;
 
 typedef struct MethodEntry { Method *m; struct MethodEntry *next; } MethodEntry;
 
-/* 内置流类型 */
+/* Builtin stream kinds */
 typedef enum { B_NONE = 0, B_CIO, B_FIO, B_SIO, B_SOLID, B_ARRAYS, B_BIN, B_BTS, B_TASK, B_REF, B_TIME, B_REM, B_CONST, B_OBJ, B_COM, B_IO } BuiltinKind;
 
 struct Stream {
     const char *name;
-    MethodEntry *methods;      /* 用户流的方法 */
-    VarMap *fields;            /* 流字段/属性（this:: 的属性存储） */
-    int builtin;               /* B_NONE=用户流，其余=内置流 */
-    void *dl;                  /* B_BIN: dlopen 句柄 */
+    MethodEntry *methods;      /* user stream methods */
+    VarMap *fields;            /* stream fields/attributes (storage for this:: attributes) */
+    int builtin;               /* B_NONE = user stream, otherwise builtin */
+    void *dl;                  /* B_BIN: dlopen handle */
     struct Stream *next;
 };
 
@@ -134,21 +134,21 @@ typedef struct {
 } Parser;
 
 typedef struct {
-    Decl *decls;         /* 全部声明（含 Main） */
-    Stream *streams;     /* 流注册表 */
-    VarMap globals;      /* Unistream 程序级（跟随 u） */
-    VarMap consts;       /* Constantstream 公共常量层（const 修饰声明，只读） */
-    VarMap main_area;    /* 主线程作用域（跟随 a） */
-    VarMap *cur_area;    /* 当前作用域（线程切换时更新） */
-    VarMap *cur_scope;   /* 当前方法作用域（引用解析用） */
-    Stream *cur_stream;  /* 当前执行方法的流（裸调用/内部属性优先） */
-    Value *arrays;       /* Arrays 注册表：所有 Array/Vector 实例 */
+    Decl *decls;         /* all declarations (incl. Main) */
+    Stream *streams;     /* stream registry */
+    VarMap globals;      /* Unistream program level (followed by u) */
+    VarMap consts;       /* Constantstream public constants layer (const declarations, read-only) */
+    VarMap main_area;    /* main-thread scope (followed by a) */
+    VarMap *cur_area;    /* current area (updated on thread switch) */
+    VarMap *cur_scope;   /* current method scope (for reference resolution) */
+    Stream *cur_stream;  /* stream currently executing a method (bare calls / internal attrs take priority) */
+    Value *arrays;       /* Arrays registry: all Array/Vector instances */
 } Interp;
 
 void *aalloc(size_t n);
 char *astrdup(const char *s);
-/* 通用"无"：无显式返回时默认 ref(NOTHING)，if 视为假 */
-#define NOTHING "无"
+/* Generic "nothing": default ref(NOTHING) when no explicit return; if treats it as false */
+#define NOTHING "nothing"
 
 Result *builtin_request(int kind, const char *method, Value **args, int nargs);
 Value *mk_arr(int cap);
@@ -164,7 +164,7 @@ Result *const_request(const char *method, Value **args, int nargs);
 Result *obj_request(const char *method, Value **args, int nargs);
 Result *arrays_request(const char *method, Value **args, int nargs);
 Result *solid_request(const char *method, Value **args, int nargs);
-VarMap *ref_layer_get(Interp *in, const char *follow);   /* 智能引用跟随层：u/f/a */
+VarMap *ref_layer_get(Interp *in, const char *follow);   /* smart-ref follow layer: u/f/a */
 Value *mk_obj(const char *cls);
 Decl *find_class(Interp *in, const char *name);
 Method *class_method(Decl *cls, const char *mname);
@@ -184,21 +184,21 @@ Decl *parse_program_tokens(Tok *toks, int n, int *err);
 void print_value(Value *v);
 const char *reject_reason(Value *v);
 void run_source(const char *src);
-int compile_program(const char *src, const char *outpath);   /* bio -b：源码嵌入编译 */
+int compile_program(const char *src, const char *outpath);   /* bio -b: source-embedded compilation */
 Tok *tokenize(const char *src, int *ntok);
 
-/* ── 项目式编译运行（src/project.c）── */
-/* TOML 键值表（极简，src/toml.c） */
+/* ── Project-based build & run (src/project.c) ── */
+/* TOML key-value table (minimal, src/toml.c) */
 typedef struct TomlPair { const char *key; const char *val; } TomlPair;
 typedef struct TomlTable { TomlPair *pairs; int n; } TomlTable;
-TomlTable *toml_parse_file(const char *path);         /* 顶层 + [dependencies] */
-const char *toml_get(TomlTable *t, const char *key);  /* 查顶层键 */
-const char *toml_dep(TomlTable *t, int idx, const char **name); /* 遍历依赖 */
-const char *toml_dep_field(TomlTable *t, const char *dep, const char *field); /* 依赖的 version/repo */
-/* 全局配置：环境变量 BIOLANG_CONFIG 指向全局配置文件（TOML，可含 repo/系统路径） */
-const char *global_repo(void);                        /* 从全局配置解析默认 repo */
+TomlTable *toml_parse_file(const char *path);         /* top-level + [dependencies] */
+const char *toml_get(TomlTable *t, const char *key);  /* look up a top-level key */
+const char *toml_dep(TomlTable *t, int idx, const char **name); /* iterate dependencies */
+const char *toml_dep_field(TomlTable *t, const char *dep, const char *field); /* a dep's version/repo */
+/* Global config: env var BIOLANG_CONFIG points to a global config file (TOML, may contain repo / system path) */
+const char *global_repo(void);                        /* resolve the default repo from the global config */
 
-/* 项目命令 */
+/* Project commands */
 int project_init(const char *name);                   /* bio init */
 int project_build(const char *dir, const char *out);  /* bio build */
 int project_run(const char *dir);                     /* bio run */
@@ -206,8 +206,8 @@ int project_install(const char *dir);                 /* bio install */
 int project_destroy(const char *dir);                 /* bio destroy */
 int truthy(Value *v);
 Value *var_get(VarMap *m, const char *name);
-Value *var_get_layer(VarMap *m, const char *name);   /* 单层查找（引用用） */
-void var_del(VarMap *m, const char *name);               /* 删除（属性冲走） */
+Value *var_get_layer(VarMap *m, const char *name);   /* single-layer lookup (for references) */
+void var_del(VarMap *m, const char *name);               /* delete (attribute washed away) */
 void var_set(VarMap *m, const char *name, Value *v);
 
 #endif /* BIO_H */

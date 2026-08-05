@@ -1,16 +1,18 @@
 #include "bio.h"
 #include <stdlib.h>
 
-/* ═══════════════ 编译器（bio -b）═══════════════
- * 本语言可以解释也可以编译。编译策略：源码嵌入 —— 生成一个含程序源码的 C 驱动
- * 文件，链接解释器运行时（libbio.a），产出自包含的原生可执行文件。
- * 运行时不再需要 bio，且 100% 保真（请求模型/对象流/线程等全部复用解释器）。
+/* ═══════════════ Compiler (bio -b) ═══════════════
+ * This language can be interpreted as well as compiled. Compilation strategy:
+ * source embedding — generate a C driver containing the program source, link
+ * against the interpreter runtime (libbio.a), and produce a self-contained
+ * native executable. At runtime it needs neither bio nor the source, and it is
+ * 100% faithful (request model / object streams / threads all reuse the interpreter).
  */
 #ifndef BIO_HOME
 #define BIO_HOME "."
 #endif
 
-/* 把源码转义成 C 字符串字面量 */
+/* Escape the source into a C string literal */
 static char *escape_cstr(const char *s) {
     size_t n = strlen(s);
     char *out = aalloc(n * 2 + 2);
@@ -28,9 +30,9 @@ static char *escape_cstr(const char *s) {
     return out;
 }
 
-/* 返回 0 成功；否则 1 */
+/* Return 0 on success, 1 on failure */
 int compile_program(const char *src, const char *outpath) {
-    /* 1. 先解析校验：程序必须能通过词法/语法分析 */
+    /* 1. Parse-validate first: the program must pass lexing/parsing */
     int ntok, err = 0;
     Tok *toks = tokenize(src, &ntok);
     Decl *decls = parse_program_tokens(toks, ntok, &err);
@@ -40,7 +42,7 @@ int compile_program(const char *src, const char *outpath) {
     }
     (void)decls;
 
-    /* 2. 生成驱动 C 文件 */
+    /* 2. Generate the driver C file */
     char *esc = escape_cstr(src);
     size_t tmplen = strlen(outpath) + 32;
     char *tmp = aalloc(tmplen);
@@ -56,7 +58,7 @@ int compile_program(const char *src, const char *outpath) {
         esc);
     fclose(f);
 
-    /* 3. 调用 gcc：直接编译解释器运行时源码（不依赖预建的 libbio.a） */
+    /* 3. Invoke gcc: compile the interpreter runtime sources directly (no prebuilt libbio.a dependency) */
     char cmd[8192];
     snprintf(cmd, sizeof cmd,
         "gcc -O2 -I\"%s/src\" -o \"%s\" \"%s\" "

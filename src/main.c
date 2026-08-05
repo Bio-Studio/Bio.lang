@@ -1,7 +1,7 @@
 #include "bio.h"
 
-/* 入口 + 演示 */
-/* ═══════════════ 演示 ═══════════════ */
+/* Entry point + demos */
+/* ═══════════════ Demos ═══════════════ */
 const char *DEMO1 =
     "program main;\n"
     "Main { void exec() { IO::println(\"Hello World!\"); } }\n";
@@ -353,7 +353,7 @@ static const char *DEMO13 =
     "    }\n"
     "}\n";
 
-/* 读取整个文件到 aalloc 缓冲区；失败返回 NULL */
+/* Read a whole file into an aalloc buffer; NULL on failure */
 static char *read_whole_file(const char *path) {
     FILE *f = fopen(path, "r");
     if (!f) return NULL;
@@ -361,7 +361,7 @@ static char *read_whole_file(const char *path) {
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *buf = aalloc(sz + 1);
-    if (fread(buf, 1, sz, f) != (size_t)sz) { /* 忽略 */ }
+    if (fread(buf, 1, sz, f) != (size_t)sz) { /* ignore */ }
     buf[sz] = 0;
     fclose(f);
     return buf;
@@ -389,7 +389,7 @@ int main(int argc, char **argv) {
         print_usage();
         return 0;
     }
-    /* ── 项目命令 ── */
+    /* ── Project commands ── */
     if (argc > 1 && strcmp(argv[1], "init") == 0 && argc > 2)
         return project_init(argv[2]);
     if (argc > 1 && strcmp(argv[1], "build") == 0) {
@@ -422,7 +422,7 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (argc > 1 && strcmp(argv[1], "-b") == 0 && argc > 2) {
-        /* -b：编译为自包含原生可执行文件 */
+        /* -b: compile into a self-contained native executable */
         const char *file = argv[2];
         const char *out = NULL;
         if (argc > 3 && strcmp(argv[3], "-o") == 0 && argc > 4) out = argv[4];
@@ -432,7 +432,7 @@ int main(int argc, char **argv) {
         if (!out) {
             snprintf(outname, sizeof outname, "%s", file);
             char *dot = strrchr(outname, '.');
-            if (dot && dot != outname) *dot = 0;   /* 去扩展名 */
+            if (dot && dot != outname) *dot = 0;   /* strip the extension */
             out = outname;
         }
         printf("compiling %s → %s\n", file, out);
@@ -440,7 +440,7 @@ int main(int argc, char **argv) {
         printf("done: %s (standalone executable)\n", out);
         return 0;
     }
-    /* -r 显式运行，或默认直接运行 */
+    /* -r explicit run, or just run by default */
     int fileidx = 1;
     if (argc > 1 && strcmp(argv[1], "-r") == 0) fileidx = 2;
     if (argc > fileidx) {

@@ -3,27 +3,28 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-/* ═══════════════ 项目式编译运行 ═══════════════
- * 项目结构：
- *   package.toml        清单（name/version/repo + [dependencies]）
- *   src/                应用源码（main.bio 为入口）
- *   utils/              库/工具箱（.bio）
- *   .biolang/deps/      安装的依赖
- * need 捆绑：按需最小集 —— 从 main 入口开始收集 need，在注册表里找提供者，
- * 递归扩展，直到闭包稳定；任何 need 无提供者 → 报错。
+/* ═══════════════ project-based build & run ═══════════════
+ * Project structure:
+ *   package.toml        manifest (name/version/repo + [dependencies])
+ *   src/                application source (main.bio is the entry)
+ *   utils/              library/toolbox (.bio)
+ *   .biolang/deps/      installed dependencies
+ * need bundling: on-demand minimal set — collect needs starting from the main entry,
+ * find providers in the registry, expand recursively until the closure is stable;
+ * any need without a provider → error.
  */
 
 typedef struct ProjFile {
-    const char *path;       /* 相对项目根路径（用于信息展示） */
-    char *content;          /* 读入源码 */
-    Decl *decls;            /* 解析结果 */
-    int included;           /* 被捆绑 */
+    const char *path;       /* path relative to project root (for display) */
+    char *content;          /* source code read in */
+    Decl *decls;            /* parse result */
+    int included;           /* bundled */
     struct ProjFile *next;
 } ProjFile;
 
 static ProjFile *files = NULL;
 
-/* ── 文件系统辅助 ── */
+/* ── filesystem helpers ── */
 static char *read_whole(const char *path) {
     FILE *f = fopen(path, "r");
     if (!f) return NULL;
@@ -31,7 +32,7 @@ static char *read_whole(const char *path) {
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *b = aalloc((size_t)sz + 1);
-    if (fread(b, 1, sz, f) != (size_t)sz) { /* 忽略 */ }
+    if (fread(b, 1, sz, f) != (size_t)sz) { /* ignored */ }
     b[sz] = 0;
     fclose(f);
     return b;
@@ -51,7 +52,7 @@ static int ends_with(const char *s, const char *suf) {
     return ls >= lf && strcmp(s + ls - lf, suf) == 0;
 }
 
-/* 递归收集 dir 下所有 .bio/.bl 文件，加入注册表 */
+/* recursively collect all .bio/.bl files under dir and add them to the registry */
 static void scan_dir(const char *dir, const char *relbase) {
     DIR *d = opendir(dir);
     if (!d) return;
@@ -81,21 +82,21 @@ static void scan_dir(const char *dir, const char *relbase) {
     closedir(d);
 }
 
-/* ── 提供者 / 需求 识别 ── */
+/* ── provider / requirement recognition ── */
 static int decl_is(Decl *d, const char *kind, const char *name) {
     if (d->kind == D_SIG || d->kind == D_CLASS)
         return strcmp(d->name, name) == 0;
-    if (d->kind == D_FORK) return strcmp(d->name, name) == 0;   /* 实现流 */
+    if (d->kind == D_FORK) return strcmp(d->name, name) == 0;   /* implementation stream */
     if (d->kind == D_CONST && strcmp(kind, "value") == 0) return strcmp(d->name, name) == 0;
     return 0;
 }
 
-/* 该文件是否提供 kind 名为 name 的东西（kind: stream/Class/value/function） */
+/* whether the file provides something of the given kind named name (kind: stream/Class/value/function) */
 static int file_provides(ProjFile *f, const char *kind, const char *name) {
     for (Decl *d = f->decls; d; d = d->next) {
         if (decl_is(d, kind, name)) return 1;
         if (strcmp(kind, "function") == 0) {
-            /* 方法提供者：方法名 = name（D_FORK/D_CLASS 里的方法） */
+            /* method provider: method name = name (methods inside D_FORK/D_CLASS) */
             if (d->kind == D_FORK || d->kind == D_CLASS) {
                 for (int i = 0; i < d->nmethods; i++)
                     if (strcmp(d->methods[i].name, name) == 0) return 1;
@@ -105,7 +106,7 @@ static int file_provides(ProjFile *f, const char *kind, const char *name) {
     return 0;
 }
 
-/* 收集该文件所有 need 到数组（kind,name）对 */
+/* collect all needs of the file into an array of (kind, name) pairs */
 static void file_needs(ProjFile *f, const char **kinds, const char **names, int *n) {
     *n = 0;
     for (Decl *d = f->decls; d; d = d->next) {
@@ -115,16 +116,16 @@ static void file_needs(ProjFile *f, const char **kinds, const char **names, int 
     }
 }
 
-/* 找提供 need 的文件；返回 NULL 表示无提供者 */
+/* find the file providing the need; returns NULL if there is no provider */
 static ProjFile *find_provider(const char *kind, const char *name) {
     for (ProjFile *f = files; f; f = f->next)
         if (file_provides(f, kind, name)) return f;
     return NULL;
 }
 
-/* ── 按需捆绑最小集 ──
- * 从入口文件开始，BFS 收集 need 提供者，递归扩展。
- * 返回 0 成功；1 有未满足 need。 */
+/* ── on-demand bundling of the minimal set ──
+ * Starting from the entry file, BFS-collect need providers and expand recursively.
+ * Returns 0 on success; 1 if some needs are unmet. */
 static int bundle_from(ProjFile *entry) {
     entry->included = 1;
     ProjFile *queue[512]; int qn = 0; int qi = 0;
@@ -135,7 +136,7 @@ static int bundle_from(ProjFile *entry) {
         const char *kinds[64], *names[64]; int nn = 0;
         file_needs(cur, kinds, names, &nn);
         for (int i = 0; i < nn; i++) {
-            /* 已在注册表里找到（当前程序含该名）则跳过 */
+            /* skip if already found in the registry (current program contains that name) */
             int ok = 0;
             for (ProjFile *f = files; f; f = f->next)
                 if (f->included && file_provides(f, kinds[i], names[i])) { ok = 1; break; }
@@ -152,7 +153,7 @@ static int bundle_from(ProjFile *entry) {
     return unmet;
 }
 
-/* 拼接所有 included 文件的源码 */
+/* concatenate the source of all included files */
 static char *concat_bundle(void) {
     size_t total = 0;
     for (ProjFile *f = files; f; f = f->next)
@@ -164,13 +165,13 @@ static char *concat_bundle(void) {
     return out;
 }
 
-/* 找入口文件：src/main.bio 或 src 下第一个 .bio */
+/* find the entry file: src/main.bio, or the first .bio under src */
 static ProjFile *find_entry(const char *dir) {
     (void)dir;
     for (ProjFile *f = files; f; f = f->next) {
         if (strcmp(f->path, "main.bio") == 0) return f;
     }
-    /* src/ 下第一个 */
+    /* first one under src/ */
     for (ProjFile *f = files; f; f = f->next)
         if (strstr(f->path, "src/")) return f;
     return files;
@@ -185,9 +186,9 @@ static int mkdirs(const char *dir) {
     return 0;
 }
 
-/* ── 项目命令 ── */
+/* ── project commands ── */
 
-/* bio init <name>：创建项目骨架 */
+/* bio init <name>: create a project skeleton */
 int project_init(const char *name) {
     mkdirs(name);
     mkdirs(join(name, "src"));
@@ -199,8 +200,8 @@ int project_init(const char *name) {
     fprintf(f,
         "name = \"%s\"\n"
         "version = \"0.1.0\"\n"
-        "# repo = \"https://...\"   # 可选：本包仓库\n"
-        "# 依赖（repo 可选，默认用全局配置 BIOLANG_CONFIG 或 ~/.biolang/config.toml）\n"
+        "# repo = \"https://...\"   # optional: this package's repository\n"
+        "# dependencies (repo optional; defaults to the global config BIOLANG_CONFIG or ~/.biolang/config.toml)\n"
         "[dependencies]\n"
         "# libfoo = { version = \"1.0.0\" }\n"
         "# libbar = { version = \"0.2.0\", repo = \"https://...\" }\n",
@@ -220,7 +221,7 @@ int project_init(const char *name) {
     return 0;
 }
 
-/* bio build [dir]：按需捆绑 + 编译 */
+/* bio build [dir]: on-demand bundling + compile */
 int project_build(const char *dir, const char *out) {
     char *src_dir = join(dir, "src");
     char *utils_dir = join(dir, "utils");
@@ -247,7 +248,7 @@ int project_build(const char *dir, const char *out) {
     return 0;
 }
 
-/* bio run [dir]：解释运行项目 */
+/* bio run [dir]: interpret and run the project */
 int project_run(const char *dir) {
     char *src_dir = join(dir, "src");
     char *utils_dir = join(dir, "utils");
@@ -267,7 +268,7 @@ int project_run(const char *dir) {
     return 0;
 }
 
-/* bio install [dir]：读 package.toml 依赖，按 repo 拉取到 .biolang/deps/<name>/ */
+/* bio install [dir]: read dependencies from package.toml and fetch them by repo into .biolang/deps/<name>/ */
 int project_install(const char *dir) {
     char *toml = join(dir, "package.toml");
     TomlTable *t = toml_parse_file(toml);
@@ -278,7 +279,7 @@ int project_install(const char *dir) {
         any = 1;
         const char *repo = toml_dep_field(t, name, "repo");
         const char *ver = toml_dep_field(t, name, "version");
-        if (!repo) repo = global_repo();   /* 依赖自身 → 全局配置 */
+        if (!repo) repo = global_repo();   /* dependency itself → global config */
         if (!repo) {
             fprintf(stderr, "⛔ dep %s: no repo (set repo= or BIOLANG_CONFIG global repo)\n", name);
             idx++; continue;
@@ -288,14 +289,14 @@ int project_install(const char *dir) {
         char *dest = join(depsroot, name);
         char cmd[4096];
         if (strncmp(repo, "http", 4) == 0 && strstr(repo, ".git")) {
-            /* git 仓库 */
+            /* git repository */
             snprintf(cmd, sizeof cmd, "git clone --depth 1 %s %s 2>/dev/null", repo, dest);
         } else if (strncmp(repo, "http", 4) == 0) {
-            /* http 下载（假设 repo 指向 package.toml，下载到临时再解？v1 简化为 curl 到 dest/package.toml） */
+            /* http download (assumes repo points to package.toml; v1 simplifies to curl into dest/package.toml) */
             mkdirs(dest);
             snprintf(cmd, sizeof cmd, "curl -fsSL %s -o %s/package.toml 2>/dev/null", repo, dest);
         } else {
-            /* 本地路径 */
+            /* local path */
             mkdirs(dest);
             snprintf(cmd, sizeof cmd, "cp -r %s/. %s/ 2>/dev/null", repo, dest);
         }
@@ -310,7 +311,7 @@ int project_install(const char *dir) {
     return 0;
 }
 
-/* bio destroy [dir]：删除构建产物（.biolang/ 和 app 可执行文件，保留源码） */
+/* bio destroy [dir]: delete build artifacts (.biolang/ and the app executable, keep source) */
 int project_destroy(const char *dir) {
     char cmd[2048];
     snprintf(cmd, sizeof cmd, "rm -rf %s/.biolang %s/app %s/build", dir, dir, dir);

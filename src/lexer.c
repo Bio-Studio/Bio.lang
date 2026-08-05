@@ -1,6 +1,6 @@
 #include "bio.h"
 
-/* 词法 */
+/* Lexing */
 const char *KW[] = { "program","Stream","Class","Main","need","value","function",
                             "void","overwrite","ALL","res","ref","cause","new",
                             "const","thread",
@@ -23,7 +23,7 @@ Tok *tokenize(const char *src, int *ntok) {
             p = e ? e + 2 : p + strlen(p);
             continue;
         }
-        /* 字符串 */
+        /* String literal */
         if (*p == '"') {
             p++; char buf[512]; int bi = 0;
             while (*p && *p != '"') {
@@ -36,13 +36,13 @@ Tok *tokenize(const char *src, int *ntok) {
             toks[n].kind = T_STR; toks[n].text = astrdup(buf); n++;
             continue;
         }
-        /* 数字 */
+        /* Number */
         if (isdigit((unsigned char)*p) || (*p == '.' && isdigit((unsigned char)p[1]))) {
             char *end;
             toks[n].kind = T_NUM; toks[n].num = strtod(p, &end); p = end; n++;
             continue;
         }
-        /* 标识符 / 关键字 */
+        /* Identifier / keyword */
         if (isalpha((unsigned char)*p) || *p == '_') {
             const char *start = p;
             while (isalnum((unsigned char)*p) || *p == '_') p++;
@@ -52,7 +52,7 @@ Tok *tokenize(const char *src, int *ntok) {
             toks[n].text = astrdup(buf); n++;
             continue;
         }
-        /* 运算符 */
+        /* Operator */
         if (p[0] == ':' && p[1] == ':') { toks[n].kind = T_OP; toks[n].text = "::"; p += 2; n++; continue; }
         if ((p[0] == '=' && p[1] == '=') || (p[0] == '!' && p[1] == '=') ||
             (p[0] == '<' && p[1] == '=') || (p[0] == '>' && p[1] == '=') ||
@@ -72,4 +72,3 @@ Tok *tokenize(const char *src, int *ntok) {
     *ntok = n;
     return toks;
 }
-

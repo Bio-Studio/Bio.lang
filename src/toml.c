@@ -1,9 +1,9 @@
 #include "bio.h"
 
-/* ═══════════════ 极简 TOML 解析（package.toml 用）═══════════════
- * 支持：注释 #，顶层 name/version/repo，[dependencies] 节，
- *       依赖项 name = { version="..", repo=".." }（repo 可省）。
- * 足以支撑项目清单标准字段 version/name/repo。
+/* ═══════════════ Minimal TOML parser (for package.toml) ═══════════════
+ * Supports: comments #, top-level name/version/repo, [dependencies] section,
+ *           deps name = { version="..", repo=".." } (repo optional).
+ * Enough for the manifest's standard fields version/name/repo.
  */
 
 static char *read_file(const char *path) {
@@ -13,7 +13,7 @@ static char *read_file(const char *path) {
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *buf = aalloc(sz + 1);
-    if (fread(buf, 1, sz, f) != (size_t)sz) { /* 忽略 */ }
+    if (fread(buf, 1, sz, f) != (size_t)sz) { /* ignore */ }
     buf[sz] = 0;
     fclose(f);
     return buf;
@@ -37,7 +37,7 @@ TomlTable *toml_parse_file(const char *path) {
     if (!src) return NULL;
 
     TomlTable *t = aalloc(sizeof(TomlTable));
-    /* 收集键值对到 arena 数组（够用：标准字段少） */
+    /* Collect key-value pairs into an arena array (enough: few standard fields) */
     static const char *keys[256];
     static const char *vals[256];
     static int nkv = 0;
@@ -59,9 +59,9 @@ TomlTable *toml_parse_file(const char *path) {
                         char *k = trim(l);
                         char *v = trim(eq + 1);
                         if (in_deps) {
-                            /* 依赖项：name = { version="..", repo=".." } */
+                            /* dep: name = { version="..", repo=".." } */
                             if (*v == '{') {
-                                /* 存 "@dep" 表：把内联表原文存为 val，后续解析 */
+                                /* Store "@dep" table: keep the inline table text as val, parse later */
                                 if (nkv < 256) { keys[nkv] = k; vals[nkv] = v; nkv++; }
                             }
                         } else {
@@ -82,12 +82,12 @@ TomlTable *toml_parse_file(const char *path) {
     for (int i = 0; i < nkv; i++) {
         const char *k = keys[i];
         const char *v = vals[i];
-        /* 依赖项（val 是内联表原文）：解析 version/repo */
+        /* Dep (val is inline table text): parse version/repo */
         if (v && v[0] == '{') {
             char *ver = NULL, *repo = NULL;
-            char *vv = (char*)v;   /* 内联表 { version="..", repo=".." } */
+            char *vv = (char*)v;   /* inline table { version="..", repo=".." } */
             for (char *q = vv + 1; *q && *q != '}'; q++) {
-                /* 找 key = */
+                /* Find key = */
                 char *ks = q;
                 while (*q && *q != '=' && *q != '}' && *q != ',') q++;
                 if (*q != '=') continue;
@@ -110,9 +110,9 @@ TomlTable *toml_parse_file(const char *path) {
                 if (strcmp(k, "version") == 0) ver = val;
                 else if (strcmp(k, "repo") == 0) repo = val;
                 *ve = old;
-                if (old == ',' || old == '}') { /* 继续 */ }
+                if (old == ',' || old == '}') { /* continue */ }
             }
-            /* 存三键：@dep:name（存在标记）、@dep:name:version、@dep:name:repo */
+            /* Store three keys: @dep:name (presence), @dep:name:version, @dep:name:repo */
             char *k1 = aalloc(strlen(k) + 16);
             snprintf(k1, strlen(k) + 16, "@dep:%s", k);
             if (t->n < 256) { t->pairs[t->n].key = k1; t->pairs[t->n].val = "1"; t->n++; }
@@ -139,7 +139,7 @@ const char *toml_get(TomlTable *t, const char *key) {
     return NULL;
 }
 
-/* 遍历依赖：idx 从 0 起；返回依赖名并写入 *name；到末尾返回 NULL */
+/* Iterate deps: idx from 0; return the dep name and set *name; NULL at the end */
 const char *toml_dep(TomlTable *t, int idx, const char **name) {
     int d = 0;
     for (int i = 0; i < t->n; i++) {
@@ -152,15 +152,15 @@ const char *toml_dep(TomlTable *t, int idx, const char **name) {
     return NULL;
 }
 
-/* 查某依赖的 version/repo；field = "version"/"repo" */
+/* Look up a dep's version/repo; field = "version"/"repo" */
 const char *toml_dep_field(TomlTable *t, const char *dep, const char *field) {
     char key[128];
     snprintf(key, sizeof key, "@dep:%s:%s", dep, field);
     return toml_get(t, key);
 }
 
-/* 全局默认 repo：环境变量 BIOLANG_CONFIG → 全局配置文件（TOML）里的 repo。
- * 配置格式示例：
+/* Global default repo: env var BIOLANG_CONFIG → the repo in the global config file (TOML).
+ * Example config format:
  *   repo = "https://.../biolang-repos"
  *   [repo]
  *   url = "https://..."
@@ -168,7 +168,7 @@ const char *toml_dep_field(TomlTable *t, const char *dep, const char *field) {
 const char *global_repo(void) {
     const char *cfgpath = getenv("BIOLANG_CONFIG");
     if (!cfgpath) {
-        /* 系统默认路径（跨系统）：~/.biolang/config.toml */
+        /* System default path (cross-platform): ~/.biolang/config.toml */
         const char *home = getenv("HOME");
         if (home) {
             static char p[1024];

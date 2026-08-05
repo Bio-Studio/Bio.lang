@@ -1,10 +1,10 @@
 #include "bio.h"
 
-/* ═══════════════ 内置流 ═══════════════
- * CIO —— 控制台（Console）
- * FIO —— 文件
- * SIO —— 字符串
- * IO  —— 父流，聚合以上全部（旧写法 IO::println 仍可用）
+/* ═══════════════ Builtin streams ═══════════════
+ * CIO —— Console
+ * FIO —— File
+ * SIO —— String
+ * IO  —— parent stream, aggregating all of the above (old style IO::println still works)
  */
 
 
@@ -17,12 +17,12 @@ static const char *arg_str(Value **args, int n, int i, const char *dflt) {
     return dflt;
 }
 
-/* ---------- CIO：控制台 ---------- */
+/* ---------- CIO: console ---------- */
 static Result *cio_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "println") == 0) {
         for (int i = 0; i < nargs; i++) {
             if (i) printf(" ");
-            /* 成功 Result 自动解包显示（res(x) → x；ref 保持 ref 显示） */
+            /* Successful Result auto-unwraps for display (res(x) → x; ref stays displayed as a ref) */
             if (args[i]->kind == V_RES && args[i]->res && !args[i]->res->ref)
                 print_value(args[i]->res->res);
             else print_value(args[i]);
@@ -32,7 +32,7 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
     }
     if (strcmp(method, "print") == 0) {
         for (int i = 0; i < nargs; i++) {
-            /* 成功 Result 自动解包显示（res(x) → x），与 println 一致 */
+            /* Successful Result auto-unwraps for display (res(x) → x), consistent with println */
             if (args[i]->kind == V_RES && args[i]->res && !args[i]->res->ref)
                 print_value(args[i]->res->res);
             else print_value(args[i]);
@@ -40,12 +40,12 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "write") == 0) {
-        /* 字节流：裸写原始字节（不换行、不格式化） */
+        /* Byte stream: write raw bytes verbatim (no newline, no formatting) */
         for (int i = 0; i < nargs; i++) fwrite(arg_str(args, nargs, i, ""), 1, strlen(arg_str(args, nargs, i, "")), stdout);
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "read") == 0) {
-        /* 字节流：读一个原始字节（0-255），EOF 返回 -1 */
+        /* Byte stream: read one raw byte (0-255); EOF returns -1 */
         int c = getchar();
         return mk_res(mk_num(c == EOF ? -1 : (double)c));
     }
@@ -53,12 +53,12 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
         for (int i = 0; i < nargs; i++) fprintf(stderr, "%s", arg_str(args, nargs, i, ""));
         return mk_res(mk_str(""));
     }
-    /* 文本流：getln 读一行文本；get 读一个字符；readInt/readNumber 读数值 */
+    /* Text stream: getln reads a line of text; get reads one character; readInt/readNumber read numeric values */
     if (strcmp(method, "getln") == 0 || strcmp(method, "readln") == 0 || strcmp(method, "readInt") == 0 ||
         strcmp(method, "readNumber") == 0) {
         char buf[512];
         if (nargs > 0) {
-            /* 提示参数：成功 Result 自动解包显示（res(x) → x） */
+            /* Prompt argument: successful Result auto-unwraps for display (res(x) → x) */
             if (args[0]->kind == V_RES && args[0]->res && !args[0]->res->ref)
                 print_value(args[0]->res->res);
             else print_value(args[0]);
@@ -80,7 +80,7 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
         return mk_res(mk_str(astrdup(buf)));
     }
     if (strcmp(method, "get") == 0) {
-        /* 文本流：读一个字符（单个 UTF-8 字节；EOF 返回空串） */
+        /* Text stream: read one character (a single UTF-8 byte; EOF returns the empty string) */
         int c = getchar();
         if (c == EOF) return mk_res(mk_str(""));
         char b[2] = { (char)c, 0 };
@@ -89,13 +89,13 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
     return mk_ref("CIO refused: no such method (bytes: read/write; text: get/getln/println/print; readInt/readNumber/error)");
 }
 
-/* ---------- FIO：文件（IOStream 的文件实现）----------
- * 除 readFile/writeFile/appendFile/exists 便捷方法外，实现 IO 核心方法：
- * 先 FIO::open(path, mode) 打开「当前文件」流，然后
- *   文本流：print/println 写 / get/getln 读；字节流：write 写 / read 读
+/* ---------- FIO: file (file implementation of IOStream)----------
+ * Besides the readFile/writeFile/appendFile/exists convenience methods, implements the IO core methods:
+ * first open the "current file" stream with FIO::open(path, mode), then
+ *   text stream: print/println write / get/getln read; byte stream: write writes / read reads
  */
 static FILE *fio_cur = NULL;
-static int fio_cur_writable = 0;   /* 当前文件允许写 */
+static int fio_cur_writable = 0;   /* whether the current file allows writing */
 
 static Result *fio_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "open") == 0) {
@@ -115,7 +115,7 @@ static Result *fio_request(const char *method, Value **args, int nargs) {
         if (fio_cur) { fclose(fio_cur); fio_cur = NULL; }
         return mk_res(mk_str(""));
     }
-    /* ---- IO 核心方法（文件实现）：写当前文件 ---- */
+    /* ---- IO core methods (file implementation): write the current file ---- */
     if (strcmp(method, "write") == 0 || strcmp(method, "print") == 0 ||
         strcmp(method, "println") == 0) {
         if (!fio_cur || !fio_cur_writable)
@@ -123,7 +123,7 @@ static Result *fio_request(const char *method, Value **args, int nargs) {
         for (int i = 0; i < nargs; i++) {
             if (i) fputc(' ', fio_cur);
             Value *v = args[i];
-            if (v->kind == V_RES && v->res && !v->res->ref) v = v->res->res;   /* 自动解包 */
+            if (v->kind == V_RES && v->res && !v->res->ref) v = v->res->res;   /* auto-unwrap */
             if (v->kind == V_STR) fputs(v->str, fio_cur);
             else if (v->kind == V_NUM) { char b[32]; snprintf(b, sizeof b, "%g", v->num); fputs(b, fio_cur); }
         }
@@ -131,15 +131,15 @@ static Result *fio_request(const char *method, Value **args, int nargs) {
         fflush(fio_cur);
         return mk_res(mk_str(""));
     }
-    /* ---- IO 核心方法（文件实现）：读当前文件 ---- */
+    /* ---- IO core methods (file implementation): read the current file ---- */
     if (strcmp(method, "read") == 0) {
-        /* 字节流：读一个原始字节（0-255），EOF 返回 -1 */
+        /* Byte stream: read one raw byte (0-255); EOF returns -1 */
         if (!fio_cur) return mk_ref("FIO refused: no file open (use FIO::open(path) first)");
         int c = fgetc(fio_cur);
         return mk_res(mk_num(c == EOF ? -1 : (double)c));
     }
     if (strcmp(method, "get") == 0) {
-        /* 文本流：读一个字符（单个字节），EOF 返回空串 */
+        /* Text stream: read one character (a single byte); EOF returns the empty string */
         if (!fio_cur) return mk_ref("FIO refused: no file open (use FIO::open(path) first)");
         int c = fgetc(fio_cur);
         if (c == EOF) return mk_res(mk_str(""));
@@ -147,7 +147,7 @@ static Result *fio_request(const char *method, Value **args, int nargs) {
         return mk_res(mk_str(astrdup(b)));
     }
     if (strcmp(method, "getln") == 0 || strcmp(method, "readln") == 0) {
-        /* 文本流：读一行 */
+        /* Text stream: read one line */
         if (!fio_cur) return mk_ref("FIO refused: no file open (use FIO::open(path) first)");
         char buf[1024];
         if (!fgets(buf, sizeof buf, fio_cur)) return mk_res(mk_str(""));
@@ -187,7 +187,7 @@ static Result *fio_request(const char *method, Value **args, int nargs) {
     return mk_ref("FIO refused: no such method");
 }
 
-/* ---------- SIO：字符串 ---------- */
+/* ---------- SIO: string ---------- */
 static char *s_dup_range(const char *s, int start, int end) {
     int len = (int)strlen(s);
     if (start < 0) start = 0;
@@ -198,16 +198,16 @@ static char *s_dup_range(const char *s, int start, int end) {
     return r;
 }
 
-/* ---------- SIO：字符串（IOStream 的字符串实现）----------
- * 除字符串工具方法外，实现 IO 的核心方法（println/print/write/read/readln）：
- * 写入/读取一个内存字符串缓冲区（SIO 的「文件」就是这块字符串）。
+/* ---------- SIO: string (string implementation of IOStream)----------
+ * Besides string tool methods, implements the IO core methods (println/print/write/read/readln):
+ * writes/reads a single in-memory string buffer (SIO's "file" is this string).
  */
 #define SIO_BUF_SIZE 8192
 static char sio_buf[SIO_BUF_SIZE];
 static int sio_len = 0;
 static int sio_head = 0;
 
-/* 把一个值转成文本追加到 SIO 缓冲区（数字/字符串/Result 解包） */
+/* Convert a value to text and append it to the SIO buffer (number/string/Result unwrapped) */
 static void sio_append_arg(Value *v) {
     if (v->kind == V_RES && v->res && !v->res->ref) v = v->res->res;
     if (v->kind == V_STR) {
@@ -230,15 +230,15 @@ static void sio_append_nl(void) {
 }
 
 static Result *sio_request(const char *method, Value **args, int nargs) {
-    /* ---- IO 核心方法（字符串实现）----
-     * 字节流：write 写原始字节到缓冲区 / read 读一个原始字节并前进
-     * 文本流：print/println 写文本 / get/getln 读文本（getln 读一行） */
+    /* ---- IO core methods (string implementation)----
+     * byte stream: write writes raw bytes to the buffer / read reads one raw byte and advances
+     * text stream: print/println write text / get/getln read text (getln reads a line) */
     if (strcmp(method, "write") == 0) {
         for (int i = 0; i < nargs; i++) sio_append_arg(args[i]);
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "read") == 0) {
-        /* 字节流：读一个原始字节（0-255），空返回 -1 */
+        /* Byte stream: read one raw byte (0-255); empty returns -1 */
         if (sio_head >= sio_len) return mk_res(mk_num(-1));
         return mk_res(mk_num((double)(unsigned char)sio_buf[sio_head++]));
     }
@@ -252,19 +252,19 @@ static Result *sio_request(const char *method, Value **args, int nargs) {
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "getln") == 0 || strcmp(method, "readln") == 0) {
-        /* 文本流：读一行（到 \n 或末尾），消费 */
+        /* Text stream: read one line (up to \n or the end), consuming it */
         if (sio_head >= sio_len) return mk_res(mk_str(""));
         int end = sio_head;
         while (end < sio_len && sio_buf[end] != '\n') end++;
         int n = end - sio_head;
         char *line = aalloc(n + 1);
         memcpy(line, sio_buf + sio_head, n); line[n] = 0;
-        sio_head = (end < sio_len) ? end + 1 : end;   /* 消费含换行 */
+        sio_head = (end < sio_len) ? end + 1 : end;   /* consume including the newline */
         if (n && line[n-1] == '\r') line[n-1] = 0;
         return mk_res(mk_str(line));
     }
     if (strcmp(method, "get") == 0) {
-        /* 文本流：读一个字符（单个字节），空返回空串 */
+        /* Text stream: read one character (a single byte); empty returns the empty string */
         if (sio_head >= sio_len) return mk_res(mk_str(""));
         char b[2] = { sio_buf[sio_head++], 0 };
         return mk_res(mk_str(astrdup(b)));
@@ -274,14 +274,14 @@ static Result *sio_request(const char *method, Value **args, int nargs) {
         return mk_res(mk_str(s_dup_range(sio_buf, sio_head, sio_len)));
     }
     if (strcmp(method, "clear") == 0) { sio_len = 0; sio_head = 0; return mk_res(mk_str("")); }
-    if (strcmp(method, "format") == 0) {   /* 手写 %d %i %s %f 替换 */
+    if (strcmp(method, "format") == 0) {   /* hand-written %d %i %s %f substitution */
         const char *fmt = arg_str(args, nargs, 0, "");
         char out[2048]; int oi = 0; int ai = 1;
         for (int i = 0; fmt[i] && oi < 2040; i++) {
             if (fmt[i] == '%' && fmt[i+1] && strchr("disfx", fmt[i+1]) && ai < nargs) {
                 char c = fmt[++i];
                 Value *v = args[ai++];
-                /* 成功 Result 自动解包（res(x) → x），与 println 一致 */
+                /* Successful Result auto-unwraps (res(x) → x), consistent with println */
                 if (v->kind == V_RES && v->res && !v->res->ref) v = v->res->res;
                 if (c == 's') { const char *s = arg_str(args, nargs, ai-1, ""); oi += snprintf(out+oi, 2048-oi, "%s", s); }
                 else if (c == 'f') oi += snprintf(out+oi, 2048-oi, "%g", v->kind == V_NUM ? v->num : 0);
@@ -341,9 +341,9 @@ static Result *sio_request(const char *method, Value **args, int nargs) {
     return mk_ref("SIO refused: no such method (IO: println/print/write/read/readln/content/clear; tools: format/length/upper/lower/trim/contains/substring/replace)");
 }
 
-/* ---------- Array：数组流 ---------- */
-/* 数组参数解包：裸 V_ARR 或 Result 包装（数组对象即 V_ARR） */
-/* 数组对象解包：裸 V_ARR / Result 包装 / 数组类对象（data 字段 = Solid 连续流） */
+/* ---------- Array: array stream ---------- */
+/* Unwrap an array argument: a bare V_ARR or a Result wrapper (an array object is a V_ARR) */
+/* Unwrap an array object: bare V_ARR / Result wrapper / array-class object (data field = Solid stream) */
 static Value *arr_unwrap(Value *v) {
     if (v->kind == V_ARR) return v;
     if (v->kind == V_RES && v->res && !v->res->ref) v = v->res->res;
@@ -354,7 +354,7 @@ static Value *arr_unwrap(Value *v) {
     return NULL;
 }
 
-/* Array/Vector 实例注册进 Arrays（由 Array/Vector 类的 __init__ 调用，Bio 代码可见） */
+/* Register an Array/Vector instance into Arrays (called by the __init__ of the Array/Vector class; visible to Bio code) */
 static void arrays_register(Value *a) {
     Interp *in = g_interp;
     if (in->arrays->len >= in->arrays->cap) {
@@ -366,7 +366,7 @@ static void arrays_register(Value *a) {
     in->arrays->items[in->arrays->len++] = a;
 }
 
-/* ---------- Solid：Solidstream 连续流（连续存储 + 自动分配 + 移动头指针） ---------- */
+/* ---------- Solid: Solid stream (contiguous storage + auto-allocation + advancing the head pointer) ---------- */
 Result *solid_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "new") == 0) return mk_res(mk_arr(0));
     Value *s = arr_unwrap(nargs > 0 ? args[0] : NULL);
@@ -397,7 +397,7 @@ Result *solid_request(const char *method, Value **args, int nargs) {
         if (s->len <= s->head) return mk_ref("Solid refused: stream is empty");
         return mk_res(s->items[--s->len]);
     }
-    if (strcmp(method, "read") == 0) {          /* 移动头指针：读一个并前进 */
+    if (strcmp(method, "read") == 0) {          /* advance the head pointer: read one and move on */
         if (s->head >= s->len) return mk_ref("Solid refused: stream is empty");
         return mk_res(s->items[s->head++]);
     }
@@ -424,7 +424,7 @@ Result *solid_request(const char *method, Value **args, int nargs) {
     return mk_ref("Solid refused: no such method (new/len/get/set/push/pop/read/peek/head/resetHead/clear/join)");
 }
 
-/* ---------- Arrays：Array 集合流（包含 Array/Vector 实例） ---------- */
+/* ---------- Arrays: Array collection stream (contains Array/Vector instances) ---------- */
 Result *arrays_request(const char *method, Value **args, int nargs) {
     Interp *in = g_interp;
     if (strcmp(method, "count") == 0) return mk_res(mk_num((double)in->arrays->len));
@@ -434,7 +434,7 @@ Result *arrays_request(const char *method, Value **args, int nargs) {
         if (i < 0 || i >= in->arrays->len) return mk_ref("Arrays refused: index out of bounds");
         return mk_res(in->arrays->items[i]);
     }
-    if (strcmp(method, "add") == 0) {           /* 注册（Array/Vector __init__ 调用） */
+    if (strcmp(method, "add") == 0) {           /* register (called by Array/Vector __init__) */
         Value *o = nargs > 0 ? args[0] : NULL;
         if (o && o->kind == V_RES && o->res && !o->res->ref) o = o->res->res;
         if (!o || o->kind != V_OBJ || !var_get_layer(o->obj_fields, "data"))
@@ -442,11 +442,11 @@ Result *arrays_request(const char *method, Value **args, int nargs) {
         arrays_register(o);
         return mk_res(o);
     }
-    if (strcmp(method, "vector") == 0) {        /* 动态数组：new Vector()（Bio 类） */
+    if (strcmp(method, "vector") == 0) {        /* dynamic array: new Vector() (a Bio class) */
         Value *cls = mk_str("Vector");
         return obj_request("new", &cls, 1);
     }
-    if (strcmp(method, "forget") == 0) {  /* 从注册表移除 */
+    if (strcmp(method, "forget") == 0) {  /* remove from the registry */
         Value *o = nargs > 0 ? args[0] : NULL;
         if (o && o->kind == V_RES && o->res && !o->res->ref) o = o->res->res;
         if (!o || o->kind != V_OBJ) return mk_ref("Arrays refused: requires an array object");
@@ -462,7 +462,7 @@ Result *arrays_request(const char *method, Value **args, int nargs) {
     return mk_ref("Arrays refused: no such method (count/all/get/add/vector/forget)");
 }
 
-/* ---------- Obj：Objstream 对象流 ---------- */
+/* ---------- Obj: Objstream object stream ---------- */
 Decl *find_class(Interp *in, const char *name) {
     for (Decl *d = in->decls; d; d = d->next)
         if (d->kind == D_CLASS && strcmp(d->name, name) == 0) return d;
@@ -482,7 +482,7 @@ Value *mk_obj(const char *cls) {
     return v;
 }
 
-/* new 的结果是 V_RES 包对象（请求模型），对象 API 统一解包（数组也是对象） */
+/* The result of new is an object wrapped in a V_RES (request model); object APIs unwrap uniformly (arrays are objects too) */
 static Value *obj_unwrap(Value *v) {
     if (v->kind == V_OBJ || v->kind == V_ARR) return v;
     if (v->kind == V_RES && v->res && !v->res->ref && v->res->res &&
@@ -499,13 +499,13 @@ Result *obj_request(const char *method, Value **args, int nargs) {
         if (!cls) return mk_ref("Obj refused: no such class (declare Class first)");
         Value *o = mk_obj(args[0]->str);
         o->obj_fields->parent = in->cur_area;
-        /* 对象也是流，储存各种属性：把类声明的字段物化到实例（默认值） */
+        /* An object is also a stream holding properties: materialize the class-declared fields onto the instance (with defaults) */
         for (int i = 0; i < cls->nfields; i++)
             var_set(o->obj_fields, cls->fields[i].name, field_default(cls->fields[i].type));
         Method *init = class_method(cls, "__init__");
         if (init) {
             Result *r = interp_exec_method(in, init, args + 1, nargs - 1, o->obj_fields, o);
-            if (r->ref && strcmp(r->ref, NOTHING) != 0) {   /* ref(无)=隐式完成 */
+            if (r->ref && strcmp(r->ref, NOTHING) != 0) {   /* ref(nothing) = implicit completion */
                 char buf[256];
                 snprintf(buf, sizeof buf, "Obj refused: __init__ refused (%s)", r->ref);
                 return mk_ref(astrdup(buf));
@@ -532,7 +532,7 @@ Result *obj_request(const char *method, Value **args, int nargs) {
     }
     if (strcmp(method, "forget") == 0) {
         if (nargs < 2 || args[1]->kind != V_STR) return mk_ref("Obj refused: forget requires a property name");
-        var_del(o->obj_fields, args[1]->str);      /* 属性被冲走 */
+        var_del(o->obj_fields, args[1]->str);      /* the property is washed away */
         return mk_res(o);
     }
     if (strcmp(method, "call") == 0) {
@@ -548,16 +548,16 @@ Result *obj_request(const char *method, Value **args, int nargs) {
         if (o->kind == V_OBJ) o->obj_fields->parent = in->cur_area;
         Result *r = interp_exec_method(in, m, args + 2, nargs - 2, o->kind == V_OBJ ? o->obj_fields : in->cur_area, o);
         if (r->ref && strcmp(r->ref, NOTHING) != 0) return mk_ref(r->ref);
-        if (r->ref) return mk_res(mk_str(""));      /* 隐式完成 → 成功无值 */
+        if (r->ref) return mk_res(mk_str(""));      /* implicit completion → success with no value */
         return mk_res(r->res);
     }
     if (strcmp(method, "class") == 0) return mk_res(mk_str(o->obj_cls));
     return mk_ref("Obj refused: no such method (new/get/set/forget/call/class)");
 }
 
-/* ---------- Time：Timestream 计时流 ----------
- * 原稿：一个 Timestream 可以同时拥有多个计时器；默认第一个计时器归线程所有，
- * 不允许归零；分叉出的（第二个、第三个……）允许归零。
+/* ---------- Time: Timestream timing stream ----------
+ * Per the spec: a Timestream can hold multiple timers at once; the default first timer belongs to the thread
+ * and may not be reset; forked timers (the second, third, ...) may be reset.
  */
 #include <time.h>
 
@@ -570,7 +570,7 @@ static double now_sec(void) {
 typedef struct { int id; double start; int forked; } Timer;
 static Timer timers[64];
 static int ntimer = 0;
-static int next_timer_id = 1000;   /* fork 分叉计时器的独立 id（避开线程 id） */
+static int next_timer_id = 1000;   /* independent id for forked timers (avoids thread ids) */
 
 static Timer *timer_find(int id) {
     for (int i = 0; i < ntimer; i++)
@@ -578,7 +578,7 @@ static Timer *timer_find(int id) {
     return NULL;
 }
 
-/* 拿到/新建计时器：first=1 表示线程默认首个计时器（不允许归零），否则视为分叉 */
+/* Obtain or create a timer: first=1 means the thread's default first timer (may not be reset), otherwise treated as a fork */
 static Timer *timer_obtain(int id, int first) {
     Timer *t = timer_find(id);
     if (t) return t;
@@ -602,7 +602,7 @@ Result *time_request(const char *method, Value **args, int nargs) {
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "start") == 0) {
-        /* 默认第一个计时器归线程所有：无参数时用当前线程 id */
+        /* The default first timer belongs to the thread: use the current thread id when no argument is given */
         int id = (nargs > 0 && args[0]->kind == V_NUM) ? (int)args[0]->num
                  : (int)bts_request("self", NULL, 0)->res->num;
         int first = nargs < 1 || args[0]->kind != V_NUM;
@@ -610,13 +610,13 @@ Result *time_request(const char *method, Value **args, int nargs) {
         return mk_res(mk_num((double)id));
     }
     if (strcmp(method, "fork") == 0) {
-        /* 分叉新计时器：独立 id，允许归零（第一个并不允许，分叉出的允许） */
+        /* Fork a new timer: independent id, may be reset (the first one may not; forked ones may) */
         Timer *t = timer_obtain(next_timer_id++, 0);
         if (!t) return mk_ref("Time refused: timer table full");
         return mk_res(mk_num((double)t->id));
     }
     if (strcmp(method, "elapsed") == 0) {
-        /* 默认第一个计时器归线程所有：无参数时用当前线程 id */
+        /* The default first timer belongs to the thread: use the current thread id when no argument is given */
         int id = (nargs > 0 && args[0]->kind == V_NUM) ? (int)args[0]->num
                  : (int)bts_request("self", NULL, 0)->res->num;
         Timer *t = timer_obtain(id, nargs < 1 || args[0]->kind != V_NUM);
@@ -624,7 +624,7 @@ Result *time_request(const char *method, Value **args, int nargs) {
         return mk_res(mk_num(now_sec() - t->start));
     }
     if (strcmp(method, "reset") == 0) {
-        /* 原稿：默认第一个计时器归线程所有，不允许归零；分叉出的允许归零 */
+        /* Per the spec: the default first timer belongs to the thread and may not be reset; forked ones may be reset */
         if (nargs < 1 || args[0]->kind != V_NUM)
             return mk_ref("Time refused: first timer (thread default) cannot be reset; use Time::fork()");
         int id = (int)args[0]->num;
@@ -638,7 +638,7 @@ Result *time_request(const char *method, Value **args, int nargs) {
     return mk_ref("Time refused: no such method (now/sleep/start/fork/elapsed/reset)");
 }
 
-/* ---------- Rem：Remstream 记忆流（默认持久化到内存，可 save/load） ---------- */
+/* ---------- Rem: Remstream memory stream (persists to memory by default; can save/load) ---------- */
 typedef struct { const char *key; Value *val; } Mem;
 static Mem mems[256];
 static int nmem = 0;
@@ -668,7 +668,7 @@ Result *rem_request(const char *method, Value **args, int nargs) {
     return mk_ref("Rem refused: no such method (save/load/forget)");
 }
 
-/* ---------- Const：Constantstream 常量流（公共常量，设后不可改） ---------- */
+/* ---------- Const: Constantstream constant stream (public constants, immutable once set) ---------- */
 static Mem consts[128];
 static int nconst = 0;
 
@@ -690,12 +690,12 @@ Result *const_request(const char *method, Value **args, int nargs) {
     return mk_ref("Const refused: no such method (set/get)");
 }
 
-/* ---------- Ref：智能引用（&权限 跟随 真名） ---------- */
-/* 跟随层（原稿）：u 程序级(Unistream) / f 方法级(Functionstream) / a 作用域级(Areastream) */
+/* ---------- Ref: smart reference (&permission follow target name) ---------- */
+/* Follow layers (per the spec): u program level (Unistream) / f method level (Functionstream) / a scope level (Areastream) */
 VarMap *ref_layer_get(Interp *in, const char *follow) {
     if (strcmp(follow, "u") == 0) return &in->globals;
     if (strcmp(follow, "a") == 0) return in->cur_area;
-    return in->cur_scope;                                    /* f = 当前方法 */
+    return in->cur_scope;                                    /* f = current method */
 }
 
 Result *ref_request(const char *method, Value **args, int nargs) {
@@ -731,7 +731,7 @@ Result *ref_request(const char *method, Value **args, int nargs) {
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "move") == 0) {
-        /* 可移动（m 权限）：从所在层取走目标并返回其值 */
+        /* Moveable (m permission): take the target from its layer and return its value */
         if (strcmp(perm, "m") != 0)
             return mk_ref("Ref refused: move requires movable permission (m)");
         Value *v = var_get_layer(layer, ref->ref_name);
@@ -740,7 +740,7 @@ Result *ref_request(const char *method, Value **args, int nargs) {
             snprintf(buf, sizeof buf, "Ref refused: target %s does not exist (%s layer)", ref->ref_name, follow);
             return mk_ref(astrdup(buf));
         }
-        var_del(layer, ref->ref_name);           /* 取走（冲走） */
+        var_del(layer, ref->ref_name);           /* take it away (washed away) */
         return mk_res(v);
     }
     if (strcmp(method, "target") == 0)
@@ -750,10 +750,10 @@ Result *ref_request(const char *method, Value **args, int nargs) {
     return mk_ref("Ref refused: no such method (read/write/move/target/perm)");
 }
 
-/* ---------- 二进制库流（B_BIN）：dlsym 调用 ---------- */
+/* ---------- Binary library stream (B_BIN): dlsym calls ---------- */
 #include <dlfcn.h>
 
-/* 二进制函数统一按 double(*)(double,...) 调用（x86-64 SysV：double 参数走 xmm0-7，返回值 xmm0） */
+/* Binary functions are all called as double(*)(double,...) (x86-64 SysV: double args go in xmm0-7, return value in xmm0) */
 typedef double (*bin_fn)(double, double, double, double, double, double);
 
 Result *bin_request(Stream *s, const char *method, Value **args, int nargs) {
@@ -770,25 +770,25 @@ Result *bin_request(Stream *s, const char *method, Value **args, int nargs) {
     return mk_res(mk_num(r));
 }
 
-/* 全局二进制库表（&func() 全局调用用） */
+/* Global binary library table (for global &func() calls) */
 typedef struct BinLib { Stream *s; struct BinLib *next; } BinLib;
 static BinLib *binlibs = NULL;
 void binlib_register(Stream *s) {
     BinLib *b = aalloc(sizeof(BinLib));
     b->s = s; b->next = binlibs; binlibs = b;
 }
-/* 全局搜 &func()：第一个提供该符号的库 */
+/* Global lookup of &func(): the first library that provides this symbol */
 Result *bin_call_global(const char *method, Value **args, int nargs) {
     for (BinLib *b = binlibs; b; b = b->next) {
         Result *r = bin_request(b->s, method, args, nargs);
-        if (!r->ref) return r;              /* 找到并成功 */
+        if (!r->ref) return r;              /* symbol found and call succeeded */
         if (strcmp(r->ref, "binary stream refused: no such symbol in library (or not a function)") != 0)
-            return r;                       /* 找到符号但调用失败 */
+            return r;                       /* symbol found but the call failed */
     }
     return mk_ref("binary call refused: no library provides function &func");
 }
 
-/* ---------- Com：Comstream 计算流（瞬时流的一个分支，处理各种瞬时计算） ---------- */
+/* ---------- Com: Comstream computation stream (a branch of instantaneous streams, handling various instantaneous computations) ---------- */
 #include <math.h>
 
 static double arg_num(Value **args, int n, int i, double dflt) {
@@ -824,8 +824,8 @@ static Result *com_request(const char *method, Value **args, int nargs) {
     return mk_ref("Com refused: no such method (abs/min/max/pow/sqrt/floor/ceil/round/sign/sin/cos/tan/log/exp)");
 }
 
-/* ---------- IO：IOStream（默认存在，可以读取和输出） ----------
- * 父流，聚合 CIO（控制台）/ FIO（文件）/ SIO（字符串），按序尝试分派 */
+/* ---------- IO: IOStream (present by default; can read and output) ----------
+ * parent stream, aggregating CIO (console) / FIO (file) / SIO (string), dispatching to each in order */
 static Result *io_request(const char *method, Value **args, int nargs) {
     Result *r = cio_request(method, args, nargs);
     if (!r->ref) return r;
