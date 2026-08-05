@@ -8,7 +8,7 @@ static size_t arena_used = 0;
 void *aalloc(size_t n) {
     n = (n + 7u) & ~7u;
     if (arena_used + n > ARENA_SIZE) {
-        fprintf(stderr, "内存池耗尽\n");
+        fprintf(stderr, "arena exhausted\n");
         exit(1);
     }
     void *p = arena + arena_used;

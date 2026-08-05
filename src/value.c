@@ -81,7 +81,7 @@ void print_value(Value *v) {
                 Value *d = var_get_layer(v->obj_fields, "data");
                 if (d && d->kind == V_ARR) { print_value(d); break; }
             }
-            printf("<对象 %s {", v->obj_cls);
+            printf("<object %s {", v->obj_cls);
             for (int i = 0; i < v->obj_fields->n; i++) {
                 if (i) printf(", ");
                 printf("%s: ", v->obj_fields->names[i]);

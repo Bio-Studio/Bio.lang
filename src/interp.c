@@ -83,7 +83,7 @@ void exec_stmts(Interp *in, Node **stmts, int n, VarMap *scope, Flow *fl);
 Result *interp_exec_method(Interp *in, Method *m, Value **args, int nargs, VarMap *parent, Value *self) {
     if (m->nparams != nargs) {
         char buf[256];
-        snprintf(buf, sizeof buf, "拒绝：%s 需要 %d 个参数，收到 %d", m->name, m->nparams, nargs);
+        snprintf(buf, sizeof buf, "%s requires %d arguments, got %d", m->name, m->nparams, nargs);
         return mk_ref(astrdup(buf));
     }
     if (m->builtin) {
@@ -136,7 +136,7 @@ Result *stream_request(Interp *in, Stream *s, const char *method, Value **args, 
     Method *m = method_find(s, method);
     if (!m) {
         char buf[256];
-        snprintf(buf, sizeof buf, "流 %s 拒绝：没有方法 %s", s->name, method);
+        snprintf(buf, sizeof buf, "stream %s refuses: no method %s", s->name, method);
         return mk_ref(astrdup(buf));
     }
     /* 用户流方法：this = 流对象（属性存流字段），作用域链 方法 → 流字段 → area */
@@ -157,7 +157,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
             Stream *s = stream_find(in, e->name);
             if (s) return mk_streamref(s);
             char buf[256];
-            snprintf(buf, sizeof buf, "拒绝：变量 %s 不存在（被冲走了？）", e->name);
+            snprintf(buf, sizeof buf, "refused: variable %s does not exist (washed away?)", e->name);
             return mk_refval(astrdup(buf));
         }
         case N_PROP: {
@@ -167,14 +167,14 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                 Value *f = var_get_layer(base->obj_fields, e->name);
                 if (f) return f;
                 char buf[256];
-                snprintf(buf, sizeof buf, "拒绝：属性 %s 被冲走了", e->name);
+                snprintf(buf, sizeof buf, "refused: property %s was washed away", e->name);
                 return mk_refval(astrdup(buf));
             }
             if (base->kind == V_RES) {
                 if (strcmp(e->name, "res") == 0) {
                     if (base->res->ref) {
                         char buf[256];
-                        snprintf(buf, sizeof buf, "拒绝：请求被拒绝，无法取 res（原因：%s）", base->res->ref);
+                        snprintf(buf, sizeof buf, "refused: request refused, cannot take res (cause: %s)", base->res->ref);
                         return mk_refval(astrdup(buf));
                     }
                     return base->res->res;
@@ -182,7 +182,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                 if (strcmp(e->name, "cause") == 0 || strcmp(e->name, "ref") == 0) {
                     /* ALL 结构含 res 与 cause；.cause 合规，.ref 为兼容别名 */
                     if (base->res->ref) return mk_str(base->res->ref);
-                    return mk_str("(无拒绝原因)");
+                    return mk_str("(no cause)");
                 }
                 /* 透传：成功 Result 里是对象/数组对象 → 属性访问（new 结果可直接 h.hp） */
                 if (!base->res->ref && base->res->res &&
@@ -191,15 +191,15 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                     Value *f = var_get_layer(base->res->res->obj_fields, e->name);
                     if (f) return f;
                     char buf[256];
-                    snprintf(buf, sizeof buf, "拒绝：属性 %s 被冲走了", e->name);
+                    snprintf(buf, sizeof buf, "refused: property %s was washed away", e->name);
                     return mk_refval(astrdup(buf));
                 }
                 char buf[256];
-                snprintf(buf, sizeof buf, "拒绝：Result 没有属性 %s", e->name);
+                snprintf(buf, sizeof buf, "refused: Result has no property %s", e->name);
                 return mk_refval(astrdup(buf));
             }
             char buf[256];
-            snprintf(buf, sizeof buf, "拒绝：无法访问 %s（属性被冲走了）", e->name);
+            snprintf(buf, sizeof buf, "refused: cannot access %s (property washed away)", e->name);
             return mk_refval(astrdup(buf));
         }
         case N_REF:
@@ -215,13 +215,13 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
             if (v->kind == V_RES && v->res) {
                 if (want_cause) {
                     if (v->res->ref) return mk_str(v->res->ref);
-                    return mk_str("(无拒绝原因)");
+                    return mk_str("(no cause)");
                 }
                 if (v->res->ref) return v;                          /* 拒绝传播 */
                 return v->res->res;
             }
             /* 非 Result：res 即自身，cause 为无 */
-            if (want_cause) return mk_str("(无拒绝原因)");
+            if (want_cause) return mk_str("(no cause)");
             return v;
         }
         case N_INDEX: {
@@ -234,12 +234,12 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
             if (data && data->kind == V_ARR) {
                 Value *iv = eval_expr(in, e->r, scope);
                 if (iv->kind == V_RES && iv->res && !iv->res->ref) iv = iv->res->res;
-                if (iv->kind != V_NUM) return mk_refval("拒绝：数组索引需要数值");
+                if (iv->kind != V_NUM) return mk_refval("refused: array index requires a number");
                 int i = (int)iv->num;
-                if (i < 0 || data->head + i >= data->len) return mk_refval("拒绝：数组索引越界");
+                if (i < 0 || data->head + i >= data->len) return mk_refval("refused: array index out of bounds");
                 return data->items[data->head + i];
             }
-            return mk_refval("拒绝：无法下标访问（不是数组）");
+            return mk_refval("refused: cannot index a non-array");
         }
         case N_BINCALL: {
             Value **vals = aalloc(sizeof(Value *) * 64);
@@ -248,7 +248,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                 Value *v = eval_expr(in, e->args[i], scope);
                 if (is_rejected(v)) {
                     char buf[256];
-                    snprintf(buf, sizeof buf, "拒绝：参数 %s 被拒绝，二进制函数 &%s 随之被拒",
+                    snprintf(buf, sizeof buf, "refused: argument %s refused, binary function &%s also refused",
                              reject_reason(v), e->mname);
                     return mk_refval(astrdup(buf));
                 }
@@ -267,10 +267,10 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                 if (is_rejected(v)) {
                     char buf[256];
                     if (e->qual)
-                        snprintf(buf, sizeof buf, "拒绝：参数 %s 被拒绝，请求 %s::%s 随之被拒",
+                        snprintf(buf, sizeof buf, "refused: argument %s refused, request %s::%s also refused",
                                  reject_reason(v), e->qual, e->mname);
                     else
-                        snprintf(buf, sizeof buf, "拒绝：参数 %s 被拒绝，函数 %s 随之被拒",
+                        snprintf(buf, sizeof buf, "refused: argument %s refused, function %s also refused",
                                  reject_reason(v), e->mname);
                     return mk_refval(astrdup(buf));
                 }
@@ -303,7 +303,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                         Method *m = cls ? class_method(cls, e->mname) : NULL;
                         if (!m) {
                             char buf[256];
-                            snprintf(buf, sizeof buf, "拒绝：类 %s 没有方法 %s", clsname, e->mname);
+                            snprintf(buf, sizeof buf, "refused: class %s has no method %s", clsname, e->mname);
                             return mk_refval(astrdup(buf));
                         }
                         if (ov->kind == V_OBJ || (ov->kind == V_ARR && ov->obj_fields))
@@ -318,7 +318,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                         return w2;
                     }
                     char buf[256];
-                    snprintf(buf, sizeof buf, "拒绝：流 %s 不存在", e->qual);
+                    snprintf(buf, sizeof buf, "refused: stream %s does not exist", e->qual);
                     return mk_refval(astrdup(buf));
                 }
             } else {
@@ -332,7 +332,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                 }
                 if (!s) {
                     char buf[256];
-                    snprintf(buf, sizeof buf, "拒绝：没有函数 %s（找不到提供该方法的流）", e->mname);
+                    snprintf(buf, sizeof buf, "refused: no function %s (no stream provides it)", e->mname);
                     return mk_refval(astrdup(buf));
                 }
             }
@@ -358,25 +358,25 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                 return mk_num((strcmp(op, "==") == 0) ? eq : !eq);
             }
             if (a->kind != V_NUM || b->kind != V_NUM) {
-                return mk_refval("拒绝：运算需要数值");
+                return mk_refval("refused: arithmetic requires numbers");
             }
             double r;
             if (strcmp(op, "+") == 0) r = a->num + b->num;
             else if (strcmp(op, "-") == 0) r = a->num - b->num;
             else if (strcmp(op, "*") == 0) r = a->num * b->num;
             else if (strcmp(op, "/") == 0) {
-                if (b->num == 0) return mk_refval("拒绝：除以零");
+                if (b->num == 0) return mk_refval("refused: division by zero");
                 r = a->num / b->num;
             }
             else if (strcmp(op, "<") == 0) r = a->num < b->num;
             else if (strcmp(op, ">") == 0) r = a->num > b->num;
             else if (strcmp(op, "<=") == 0) r = a->num <= b->num;
             else if (strcmp(op, ">=") == 0) r = a->num >= b->num;
-            else return mk_refval("拒绝：未知运算符");
+            else return mk_refval("refused: unknown operator");
             return mk_num(r);
         }
         default:
-            fprintf(stderr, "内部错误: 意外的表达式节点\n");
+            fprintf(stderr, "internal error: unexpected expression node\n");
             exit(1);
     }
 }
@@ -399,7 +399,7 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
             if (st->is_const) {
                 /* const 修饰：加入 Constantstream，重复声明拒绝 */
                 if (var_get_layer(&in->consts, st->name)) {
-                    fl->ret = mk_ref("拒绝：常量已存在，不能重复声明");
+                    fl->ret = mk_ref("refused: constant already declared");
                     break;
                 }
                 var_set(&in->consts, st->name, v);
@@ -433,21 +433,21 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                 }
                 if (!old || (old->kind == V_RES && old->res->ref)) {
                     char buf[256];
-                    snprintf(buf, sizeof buf, "拒绝：%s 目标 %s 无旧值", st->op, st->name ? st->name : "属性");
+                    snprintf(buf, sizeof buf, "refused: %s target %s has no old value", st->op, st->name ? st->name : "property");
                     fl->ret = mk_ref(astrdup(buf)); break;
                 }
                 if (old->kind == V_RES && !old->res->ref) old = old->res->res;
                 if (old->kind != V_NUM || v->kind != V_NUM) {
-                    fl->ret = mk_ref("拒绝：复合赋值需要数值");
+                    fl->ret = mk_ref("refused: compound assignment requires numbers");
                     break;
                 }
                 double nv2;
                 if (strcmp(st->op, "+=") == 0) nv2 = old->num + v->num;
                 else if (strcmp(st->op, "-=") == 0) nv2 = old->num - v->num;
                 else if (strcmp(st->op, "*=") == 0) nv2 = old->num * v->num;
-                else if (strcmp(st->op, "/=") == 0) { if (v->num == 0) { fl->ret = mk_ref("拒绝：除以零"); break; } nv2 = old->num / v->num; }
-                else if (strcmp(st->op, "%=") == 0) { if (v->num == 0) { fl->ret = mk_ref("拒绝：取模零"); break; } nv2 = (double)((long)old->num % (long)v->num); }
-                else { fl->ret = mk_ref("拒绝：未知复合赋值运算符"); break; }
+                else if (strcmp(st->op, "/=") == 0) { if (v->num == 0) { fl->ret = mk_ref("refused: division by zero"); break; } nv2 = old->num / v->num; }
+                else if (strcmp(st->op, "%=") == 0) { if (v->num == 0) { fl->ret = mk_ref("refused: modulo by zero"); break; } nv2 = (double)((long)old->num % (long)v->num); }
+                else { fl->ret = mk_ref("refused: unknown compound operator"); break; }
                 v = mk_num(nv2);
             }
             if (st->target && st->target->kind == N_PROP) {
@@ -459,7 +459,7 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                     var_set(base->obj_fields, st->target->name, v);
                     break;
                 }
-                fl->ret = mk_ref("拒绝：属性赋值目标不是对象");
+                fl->ret = mk_ref("refused: property assignment target is not an object");
                 break;
             }
             if (st->target && st->target->kind == N_INDEX) {
@@ -472,18 +472,18 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                 if (data && data->kind == V_ARR) {
                     Value *iv = eval_expr(in, st->target->r, scope);
                     if (iv->kind == V_RES && iv->res && !iv->res->ref) iv = iv->res->res;
-                    if (iv->kind != V_NUM) { fl->ret = mk_ref("拒绝：数组索引需要数值"); break; }
+                    if (iv->kind != V_NUM) { fl->ret = mk_ref("refused: array index requires a number"); break; }
                     int i = (int)iv->num;
-                    if (i < 0 || data->head + i >= data->len) { fl->ret = mk_ref("拒绝：数组索引越界"); break; }
+                    if (i < 0 || data->head + i >= data->len) { fl->ret = mk_ref("refused: array index out of bounds"); break; }
                     data->items[data->head + i] = v;
                     break;
                 }
-                fl->ret = mk_ref("拒绝：数组下标赋值目标不是数组");
+                fl->ret = mk_ref("refused: array index target is not an array");
                 break;
             }
             if (st->name && var_get_layer(&in->consts, st->name)) {
                 /* 常量只读：修改拒绝 */
-                fl->ret = mk_ref("拒绝：常量不能修改（const 声明）");
+                fl->ret = mk_ref("refused: constant is read-only (const)");
                 break;
             }
             /* 对象流裸名赋值（通用）：this 对象已储存该属性 → 写入实例字段。
@@ -522,9 +522,9 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                     if (v->kind == V_RES && v->res && v->res->ref)
                         fl->ret = mk_ref(v->res->ref);
                     else if (v->kind == V_RES && v->res && !v->res->ref)
-                        fl->ret = mk_ref("(无拒绝原因)");
+                        fl->ret = mk_ref("(no cause)");
                     else
-                        fl->ret = mk_ref(v->kind == V_STR ? v->str : "拒绝");
+                        fl->ret = mk_ref(v->kind == V_STR ? v->str : "refused");
                 }
             }
             break;
@@ -566,7 +566,7 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
             fl->cont = 1;
             break;
         default:
-            fprintf(stderr, "内部错误: 未知语句节点\n");
+            fprintf(stderr, "internal error: unknown statement node\n");
             exit(1);
     }
 }
@@ -613,7 +613,7 @@ void build(Interp *in) {
         Tok *toks2 = tokenize(PREBUILT, &nt2);
         Decl *pre = parse_program_tokens(toks2, nt2, &err2);
         if (err2) {
-            fprintf(stderr, "⚠️ 预置 Array/Vector 类解析失败，数组不可用\n");
+            fprintf(stderr, "⚠️ prebuilt Array/Vector parse failed, arrays unavailable\n");
         } else {
             Decl *tail = in->decls;
             while (tail && tail->next) tail = tail->next;
@@ -643,7 +643,7 @@ void build(Interp *in) {
             /* 二进制库流：dlopen 加载，导出函数自动成为流方法 */
             void *h = dlopen(d->file, RTLD_LAZY | RTLD_GLOBAL);
             if (!h) {
-                fprintf(stderr, "⚠️ 二进制库加载失败 %s: %s\n", d->file, dlerror());
+                fprintf(stderr, "⚠️ binary library load failed %s: %s\n", d->file, dlerror());
             }
             Stream *b = aalloc(sizeof(Stream));
             b->name = d->name; b->builtin = B_BIN; b->dl = h; b->methods = NULL; b->next = NULL;
@@ -707,7 +707,7 @@ void build(Interp *in) {
             s0.parent = &in->consts;
             Value *v = eval_expr(in, d->init, &s0);
             if (is_rejected(v)) {
-                fprintf(stderr, "⛔ 常量 %s 初值被拒绝: %s\n", d->name, reject_reason(v));
+                fprintf(stderr, "⛔ constant %s initial value refused: %s\n", d->name, reject_reason(v));
             } else {
                 var_set(&in->consts, d->name, v);
             }
@@ -721,24 +721,24 @@ int check_assumptions(Interp *in) {
         if (d->kind != D_NEED) continue;
         if (strcmp(d->needkind, "value") == 0) {
             if (!stream_find(in, d->name) && !var_get(&in->globals, d->name)) {
-                printf("⛔ 假设未满足: value %s\n", d->name); unmet = 1;
+                printf("⛔ assumption unmet: value %s\n", d->name); unmet = 1;
             }
         } else if (strcmp(d->needkind, "function") == 0) {
             int ok = 0;
             for (Stream *s = in->streams; s && !ok; s = s->next)
                 if (method_find(s, d->name)) ok = 1;
-            if (!ok) { printf("⛔ 假设未满足: function %s\n", d->name); unmet = 1; }
+            if (!ok) { printf("⛔ assumption unmet: function %s\n", d->name); unmet = 1; }
         } else if (strcmp(d->needkind, "Class") == 0) {
             if (!stream_find(in, d->name)) {
-                printf("⛔ 假设未满足: Class %s\n", d->name); unmet = 1;
+                printf("⛔ assumption unmet: Class %s\n", d->name); unmet = 1;
             }
         } else { /* stream */
             if (!stream_find(in, d->name)) {
-                printf("⛔ 假设未满足: stream %s\n", d->name); unmet = 1;
+                printf("⛔ assumption unmet: stream %s\n", d->name); unmet = 1;
             }
         }
     }
-    if (unmet) printf("⛔ 拒绝运行：存在未满足的假设\n");
+    if (unmet) printf("⛔ refusing to run: unmet assumptions exist\n");
     return unmet;
 }
 
@@ -746,11 +746,11 @@ void run_program(Interp *in) {
     Decl *main = NULL;
     for (Decl *d = in->decls; d; d = d->next)
         if (d->kind == D_MAIN) { main = d; break; }
-    if (!main) { printf("ℹ️ 没有 Main::exec()，程序没有入口\n"); return; }
+    if (!main) { printf("ℹ️ no Main::exec(), no program entry\n"); return; }
     Method *exec = NULL;
     for (int i = 0; i < main->nmethods; i++)
         if (strcmp(main->methods[i].name, "exec") == 0) exec = &main->methods[i];
-    if (!exec) { printf("ℹ️ Main 里没有 exec()\n"); return; }
+    if (!exec) { printf("ℹ️ no exec() in Main\n"); return; }
 
     /* Main 也是流：this 可用（主程序流字段），裸调用全局搜索 */
     VarMap main_fields;
@@ -761,7 +761,7 @@ void run_program(Interp *in) {
     mself->obj_fields = &main_fields;
     in->cur_area = &in->main_area;
     Result *r = interp_exec_method(in, exec, NULL, 0, &in->main_area, mself);
-    if (r->ref && strcmp(r->ref, NOTHING) != 0) printf("⛔ 主程序流被拒绝：%s\n", r->ref);
+    if (r->ref && strcmp(r->ref, NOTHING) != 0) printf("⛔ main stream refused: %s\n", r->ref);
 }
 
 /* 全局裸调用：搜索第一个提供该方法的用户流 */
@@ -769,14 +769,14 @@ Result *interp_call_global(Interp *in, const char *mname, Value **args, int narg
     for (Stream *t = in->streams; t; t = t->next)
         if (!t->builtin && method_find(t, mname))
             return stream_request(in, t, mname, args, nargs);
-    return mk_ref("拒绝：没有函数（BTS 线程目标不存在）");
+    return mk_ref("refused: no function (BTS thread target missing)");
 }
 
 void run_source(const char *src) {
     int ntok, err = 0;
     Tok *toks = tokenize(src, &ntok);
     Decl *decls = parse_program_tokens(toks, ntok, &err);
-    if (err) { fprintf(stderr, "解析失败，程序未运行\n"); return; }
+    if (err) { fprintf(stderr, "parse failed, program not run\n"); return; }
     Interp *in = interp_new(decls);
     g_interp = in;
     build(in);

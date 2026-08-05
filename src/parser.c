@@ -9,7 +9,7 @@ int is_op(Parser *p, const char *op) { return peek(p)->kind == T_OP && strcmp(pe
 
 void expect_op(Parser *p, const char *op) {
     if (!is_op(p, op)) {
-        fprintf(stderr, "语法错误: 期望 '%s'，得到 '%s' (token#%d) | 附近:", op, peek(p)->text, p->i);
+        fprintf(stderr, "syntax error: expected '%s', got '%s' (token#%d) | near:", op, peek(p)->text, p->i);
         for (int k = p->i > 3 ? p->i - 3 : 0; k < p->i + 3 && k < p->n; k++)
             fprintf(stderr, " %s", p->t[k].text);
         fprintf(stderr, "\n");
@@ -19,7 +19,7 @@ void expect_op(Parser *p, const char *op) {
 }
 
 const char *expect_id(Parser *p) {
-    if (peek(p)->kind != T_ID) { fprintf(stderr, "语法错误: 期望标识符，得到 %s\n", peek(p)->text); p->err = 1; return ""; }
+    if (peek(p)->kind != T_ID) { fprintf(stderr, "syntax error: expected identifier, got %s\n", peek(p)->text); p->err = 1; return ""; }
     return next(p)->text;
 }
 
@@ -138,11 +138,11 @@ Node *parse_primary(Parser *p) {
             Node *rf = mk_node(N_REF);
             rf->ref_perm = next(p)->text;      /* r / w / rw / m */
             if (!valid_perm(rf->ref_perm)) {
-                fprintf(stderr, "语法错误: 非法引用权限 %s（应为 r/w/rw/m）\n", rf->ref_perm); p->err = 1;
+                fprintf(stderr, "syntax error: invalid reference permission %s (should be r/w/rw/m)\n", rf->ref_perm); p->err = 1;
             }
             rf->ref_follow = next(p)->text;    /* u / f / a */
             if (!valid_follow(rf->ref_follow)) {
-                fprintf(stderr, "语法错误: 非法引用跟随 %s（应为 u/f/a）\n", rf->ref_follow); p->err = 1;
+                fprintf(stderr, "syntax error: invalid reference follow %s (should be u/f/a)\n", rf->ref_follow); p->err = 1;
             }
             rf->ref_name = expect_id(p);       /* 真名 */
             e = rf;
@@ -164,7 +164,7 @@ Node *parse_primary(Parser *p) {
         expect_op(p, ")");
     }
     else {
-        fprintf(stderr, "语法错误: 无法解析表达式 %s\n", t->text); p->err = 1;
+        fprintf(stderr, "syntax error: cannot parse expression %s\n", t->text); p->err = 1;
         return mk_node(N_NUM);
     }
     /* 属性访问链: .res / .ref / .字段 */
@@ -174,7 +174,7 @@ prop_chain:
         Node *prop = mk_node(N_PROP);
         prop->l = e;
         Tok *nt = next(p);
-        if (nt->kind != T_ID && nt->kind != T_KW) { fprintf(stderr, "语法错误: 属性名无效 %s\n", nt->text); p->err = 1; }
+        if (nt->kind != T_ID && nt->kind != T_KW) { fprintf(stderr, "syntax error: invalid property name %s\n", nt->text); p->err = 1; }
         prop->name = nt->text;
         e = prop;
     }
@@ -305,7 +305,7 @@ Node *parse_stmt(Parser *p) {
         n->nrets = 0;
         if (strcmp(t->text, "ref") == 0) {
             if (!(peek(p)->kind == T_KW && strcmp(peek(p)->text, "cause") == 0)) {
-                fprintf(stderr, "语法错误: ref 必须带 cause（ref cause <原因>;）\n");
+                fprintf(stderr, "syntax error: ref must be followed by cause (ref cause <reason>;)\n");
                 p->err = 1;
             }
             next(p);               /* cause */
@@ -330,7 +330,7 @@ Node *parse_stmt(Parser *p) {
         int is_c = strcmp(t->text, "const") == 0;
         next(p); /* const / thread */
         if (peek(p)->kind != T_ID || !is_type_name(peek(p)->text)) {
-            fprintf(stderr, "语法错误: %s 后需要类型（如 %s int x = 10;）\n", t->text, t->text);
+            fprintf(stderr, "syntax error: %s requires a type (e.g. %s int x = 10;)\n", t->text, t->text);
             p->err = 1;
             return mk_node(N_BREAK);
         }
@@ -377,11 +377,11 @@ Node *parse_stmt(Parser *p) {
             next(p);                              /* & */
             n->ref_perm = next(p)->text;
             if (!valid_perm(n->ref_perm)) {
-                fprintf(stderr, "语法错误: 非法引用权限 %s（应为 r/w/rw/m）\n", n->ref_perm); p->err = 1;
+                fprintf(stderr, "syntax error: invalid reference permission %s (should be r/w/rw/m)\n", n->ref_perm); p->err = 1;
             }
             n->ref_follow = next(p)->text;
             if (!valid_follow(n->ref_follow)) {
-                fprintf(stderr, "语法错误: 非法引用跟随 %s（应为 u/f/a）\n", n->ref_follow); p->err = 1;
+                fprintf(stderr, "syntax error: invalid reference follow %s (should be u/f/a)\n", n->ref_follow); p->err = 1;
             }
             if (peek(p)->kind == T_ID && is_type_name(peek(p)->text)) {
                 next(p);                          /* 类型（校验用，可带 []） */
@@ -512,7 +512,7 @@ Node *parse_stmt(Parser *p) {
             return n;
         }
     }
-    fprintf(stderr, "语法错误: 无法解析语句 %s\n", t->text);
+    fprintf(stderr, "syntax error: cannot parse statement %s\n", t->text);
     p->err = 1;
     return mk_node(N_NUM);
 }
@@ -566,7 +566,7 @@ void parse_params(Parser *p, const char ***params, int *n) {
         Tok *t = next(p);
         if (t->kind == T_ID) {
             if (is_type_name(t->text)) {
-                fprintf(stderr, "语法错误: 参数写法应为「名称 类型」（如 a int），而不是 %s\n", t->text);
+                fprintf(stderr, "syntax error: parameter syntax is 'name type' (e.g. a int), not %s\n", t->text);
                 p->err = 1; break;
             }
             ps[n2++] = t->text;
@@ -605,7 +605,7 @@ void parse_methods(Parser *p, Method **methods, int *n) {
     while (!is_op(p, "}")) {
         const char *rt = parse_ret_type(p);
         if (!rt) {
-            fprintf(stderr, "语法错误: 期望返回类型（void/int/float/double/string/char，可带 []），得到 %s\n", peek(p)->text);
+            fprintf(stderr, "syntax error: expected return type (void/int/float/double/string/char, with optional []), got %s\n", peek(p)->text);
             p->err = 1; break;
         }
         Method *m = &ms[n2++];
@@ -702,7 +702,7 @@ static void parse_members(Parser *p, Method **methods, int *nmethods, Field **fi
                 expect_op(p, ";");
             }
         } else {
-            fprintf(stderr, "语法错误: 无法解析流/类成员 %s\n", t->text);
+            fprintf(stderr, "syntax error: cannot parse stream/class member %s\n", t->text);
             p->err = 1; break;
         }
     }
@@ -738,7 +738,7 @@ Decl *parse_program(Parser *p) {
             /* 顶层 const 声明（原稿：const → Constantstream 公共常量） */
             next(p);
             if (peek(p)->kind != T_ID || !is_type_name(peek(p)->text)) {
-                fprintf(stderr, "语法错误: const 后需要类型（如 const int x = 10;）\n"); p->err = 1;
+                fprintf(stderr, "syntax error: const requires a type (e.g. const int x = 10;)\n"); p->err = 1;
             } else next(p);   /* 类型 */
             d->kind = D_CONST;
             d->name = expect_id(p);
@@ -764,7 +764,7 @@ Decl *parse_program(Parser *p) {
                     if (is_op(p, ";")) next(p);
                 } else expect_op(p, ";");
             } else {
-                fprintf(stderr, "语法错误: need 只支持 value/function/stream/Class\n"); p->err = 1;
+                fprintf(stderr, "syntax error: need only supports value/function/stream/Class\n"); p->err = 1;
             }
         }
         else if (t->kind == T_KW && strcmp(t->text, "Stream") == 0) {
@@ -775,7 +775,7 @@ Decl *parse_program(Parser *p) {
                 d->kind = D_BIN;
                 Tok *ft = next(p);
                 if (ft->kind != T_STR && ft->kind != T_ID) {
-                    fprintf(stderr, "语法错误: 期望二进制库文件名\n"); p->err = 1;
+                    fprintf(stderr, "syntax error: expected binary library file name\n"); p->err = 1;
                 }
                 d->file = ft->text;
                 expect_op(p, "{");
@@ -812,7 +812,7 @@ Decl *parse_program(Parser *p) {
             parse_members(p, &d->methods, &d->nmethods, &d->fields, &d->nfields);
         }
         else {
-            fprintf(stderr, "语法错误: 无法解析顶层声明 %s\n", t->text); p->err = 1; break;
+            fprintf(stderr, "syntax error: cannot parse top-level declaration %s\n", t->text); p->err = 1; break;
         }
     decl_done:
         if (tail) { tail->next = d; tail = d; } else { head = tail = d; }

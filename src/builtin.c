@@ -58,17 +58,17 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
         char *end;
         if (strcmp(method, "readInt") == 0) {
             long v = strtol(buf, &end, 10);
-            if (end == buf || *end) return mk_ref("CIO 拒绝：readInt 输入不是整数");
+            if (end == buf || *end) return mk_ref("CIO refused: readInt input is not an integer");
             return mk_res(mk_num((double)v));
         }
         if (strcmp(method, "readNumber") == 0) {
             double v = strtod(buf, &end);
-            if (end == buf || *end) return mk_ref("CIO 拒绝：readNumber 输入不是数字");
+            if (end == buf || *end) return mk_ref("CIO refused: readNumber input is not a number");
             return mk_res(mk_num(v));
         }
         return mk_res(mk_str(astrdup(buf)));
     }
-    return mk_ref("CIO 拒绝：没有该方法");
+    return mk_ref("CIO refused: no such method");
 }
 
 /* ---------- FIO：文件 ---------- */
@@ -76,7 +76,7 @@ static Result *fio_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "readFile") == 0) {
         const char *path = arg_str(args, nargs, 0, "");
         FILE *f = fopen(path, "r");
-        if (!f) return mk_ref("FIO 拒绝：无法打开文件（不存在或无权限）");
+        if (!f) return mk_ref("FIO refused: cannot open file (missing or no permission)");
         char buf[4096]; size_t total = 0; char *out = aalloc(1); out[0] = 0;
         while (fgets(buf, sizeof buf, f)) {
             size_t l = strlen(buf);
@@ -91,7 +91,7 @@ static Result *fio_request(const char *method, Value **args, int nargs) {
         const char *path = arg_str(args, nargs, 0, "");
         const char *content = arg_str(args, nargs, 1, "");
         FILE *f = fopen(path, strcmp(method, "writeFile") == 0 ? "w" : "a");
-        if (!f) return mk_ref("FIO 拒绝：无法写入文件");
+        if (!f) return mk_ref("FIO refused: cannot write file");
         fputs(content, f);
         fclose(f);
         return mk_res(mk_str(""));
@@ -102,7 +102,7 @@ static Result *fio_request(const char *method, Value **args, int nargs) {
         if (f) { fclose(f); return mk_res(mk_num(1)); }
         return mk_res(mk_num(0));
     }
-    return mk_ref("FIO 拒绝：没有该方法");
+    return mk_ref("FIO refused: no such method");
 }
 
 /* ---------- SIO：字符串 ---------- */
@@ -179,7 +179,7 @@ static Result *sio_request(const char *method, Value **args, int nargs) {
         out[oi] = 0;
         return mk_res(mk_str(astrdup(out)));
     }
-    return mk_ref("SIO 拒绝：没有该方法");
+    return mk_ref("SIO refused: no such method");
 }
 
 /* ---------- Array：数组流 ---------- */
@@ -211,16 +211,16 @@ static void arrays_register(Value *a) {
 Result *solid_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "new") == 0) return mk_res(mk_arr(0));
     Value *s = arr_unwrap(nargs > 0 ? args[0] : NULL);
-    if (!s) return mk_ref("Solid 拒绝：第一个参数必须是连续流（Solid::new 创建）");
+    if (!s) return mk_ref("Solid refused: first argument must be a stream (created by Solid::new)");
     if (strcmp(method, "len") == 0) return mk_res(mk_num((double)(s->len - s->head)));
     if (strcmp(method, "get") == 0) {
         int i = (nargs > 1 && args[1]->kind == V_NUM) ? (int)args[1]->num : -1;
-        if (i < 0 || s->head + i >= s->len) return mk_ref("Solid 拒绝：索引越界");
+        if (i < 0 || s->head + i >= s->len) return mk_ref("Solid refused: index out of bounds");
         return mk_res(s->items[s->head + i]);
     }
     if (strcmp(method, "set") == 0) {
         int i = (nargs > 1 && args[1]->kind == V_NUM) ? (int)args[1]->num : -1;
-        if (i < 0 || s->head + i >= s->len) return mk_ref("Solid 拒绝：索引越界");
+        if (i < 0 || s->head + i >= s->len) return mk_ref("Solid refused: index out of bounds");
         s->items[s->head + i] = args[2];
         return mk_res(s);
     }
@@ -235,15 +235,15 @@ Result *solid_request(const char *method, Value **args, int nargs) {
         return mk_res(s);
     }
     if (strcmp(method, "pop") == 0) {
-        if (s->len <= s->head) return mk_ref("Solid 拒绝：连续流为空");
+        if (s->len <= s->head) return mk_ref("Solid refused: stream is empty");
         return mk_res(s->items[--s->len]);
     }
     if (strcmp(method, "read") == 0) {          /* 移动头指针：读一个并前进 */
-        if (s->head >= s->len) return mk_ref("Solid 拒绝：连续流为空");
+        if (s->head >= s->len) return mk_ref("Solid refused: stream is empty");
         return mk_res(s->items[s->head++]);
     }
     if (strcmp(method, "peek") == 0) {
-        if (s->head >= s->len) return mk_ref("Solid 拒绝：连续流为空");
+        if (s->head >= s->len) return mk_ref("Solid refused: stream is empty");
         return mk_res(s->items[s->head]);
     }
     if (strcmp(method, "head") == 0) return mk_res(mk_num((double)s->head));
@@ -262,7 +262,7 @@ Result *solid_request(const char *method, Value **args, int nargs) {
         out[oi] = 0;
         return mk_res(mk_str(astrdup(out)));
     }
-    return mk_ref("Solid 拒绝：没有该方法（new/len/get/set/push/pop/read/peek/head/resetHead/clear/join）");
+    return mk_ref("Solid refused: no such method (new/len/get/set/push/pop/read/peek/head/resetHead/clear/join)");
 }
 
 /* ---------- Arrays：Array 集合流（包含 Array/Vector 实例） ---------- */
@@ -272,14 +272,14 @@ Result *arrays_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "all") == 0) return mk_res(in->arrays);
     if (strcmp(method, "get") == 0) {
         int i = (nargs > 0 && args[0]->kind == V_NUM) ? (int)args[0]->num : -1;
-        if (i < 0 || i >= in->arrays->len) return mk_ref("Arrays 拒绝：索引越界");
+        if (i < 0 || i >= in->arrays->len) return mk_ref("Arrays refused: index out of bounds");
         return mk_res(in->arrays->items[i]);
     }
     if (strcmp(method, "add") == 0) {           /* 注册（Array/Vector __init__ 调用） */
         Value *o = nargs > 0 ? args[0] : NULL;
         if (o && o->kind == V_RES && o->res && !o->res->ref) o = o->res->res;
         if (!o || o->kind != V_OBJ || !var_get_layer(o->obj_fields, "data"))
-            return mk_ref("Arrays 拒绝：add 需要数组对象");
+            return mk_ref("Arrays refused: add requires an array object");
         arrays_register(o);
         return mk_res(o);
     }
@@ -290,7 +290,7 @@ Result *arrays_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "forget") == 0) {  /* 从注册表移除 */
         Value *o = nargs > 0 ? args[0] : NULL;
         if (o && o->kind == V_RES && o->res && !o->res->ref) o = o->res->res;
-        if (!o || o->kind != V_OBJ) return mk_ref("Arrays 拒绝：需要数组对象");
+        if (!o || o->kind != V_OBJ) return mk_ref("Arrays refused: requires an array object");
         for (int i = 0; i < in->arrays->len; i++) {
             if (in->arrays->items[i] == o) {
                 in->arrays->items[i] = in->arrays->items[in->arrays->len - 1];
@@ -298,9 +298,9 @@ Result *arrays_request(const char *method, Value **args, int nargs) {
                 return mk_res(mk_num(1));
             }
         }
-        return mk_ref("Arrays 拒绝：数组不在注册表中");
+        return mk_ref("Arrays refused: array not in registry");
     }
-    return mk_ref("Arrays 拒绝：没有该方法（count/all/get/add/vector/forget）");
+    return mk_ref("Arrays refused: no such method (count/all/get/add/vector/forget)");
 }
 
 /* ---------- Obj：Objstream 对象流 ---------- */
@@ -335,9 +335,9 @@ static Value *obj_unwrap(Value *v) {
 Result *obj_request(const char *method, Value **args, int nargs) {
     Interp *in = g_interp;
     if (strcmp(method, "new") == 0) {
-        if (nargs < 1 || args[0]->kind != V_STR) return mk_ref("Obj 拒绝：new 需要类名");
+        if (nargs < 1 || args[0]->kind != V_STR) return mk_ref("Obj refused: new requires a class name");
         Decl *cls = find_class(in, args[0]->str);
-        if (!cls) return mk_ref("Obj 拒绝：没有这个类（需先 Class 声明）");
+        if (!cls) return mk_ref("Obj refused: no such class (declare Class first)");
         Value *o = mk_obj(args[0]->str);
         o->obj_fields->parent = in->cur_area;
         /* 对象也是流，储存各种属性：把类声明的字段物化到实例（默认值） */
@@ -348,42 +348,42 @@ Result *obj_request(const char *method, Value **args, int nargs) {
             Result *r = interp_exec_method(in, init, args + 1, nargs - 1, o->obj_fields, o);
             if (r->ref && strcmp(r->ref, NOTHING) != 0) {   /* ref(无)=隐式完成 */
                 char buf[256];
-                snprintf(buf, sizeof buf, "Obj 拒绝：__init__ 被拒绝（%s）", r->ref);
+                snprintf(buf, sizeof buf, "Obj refused: __init__ refused (%s)", r->ref);
                 return mk_ref(astrdup(buf));
             }
         }
         return mk_res(o);
     }
     Value *o = obj_unwrap(args[0]);
-    if (!o) return mk_ref("Obj 拒绝：需要对象（Obj::new / new 创建）");
+    if (!o) return mk_ref("Obj refused: requires an object (created by Obj::new / new)");
     if (strcmp(method, "get") == 0) {
-        if (nargs < 2 || args[1]->kind != V_STR) return mk_ref("Obj 拒绝：get 需要属性名");
+        if (nargs < 2 || args[1]->kind != V_STR) return mk_ref("Obj refused: get requires a property name");
         Value *f = var_get_layer(o->obj_fields, args[1]->str);
         if (!f) {
             char buf[256];
-            snprintf(buf, sizeof buf, "Obj 拒绝：属性 %s 被冲走了", args[1]->str);
+            snprintf(buf, sizeof buf, "Obj refused: property %s was washed away", args[1]->str);
             return mk_ref(astrdup(buf));
         }
         return mk_res(f);
     }
     if (strcmp(method, "set") == 0) {
-        if (nargs < 2 || args[1]->kind != V_STR) return mk_ref("Obj 拒绝：set 需要（属性名, 值）");
+        if (nargs < 2 || args[1]->kind != V_STR) return mk_ref("Obj refused: set requires (property, value)");
         var_set(o->obj_fields, args[1]->str, args[2]);
         return mk_res(o);
     }
     if (strcmp(method, "forget") == 0) {
-        if (nargs < 2 || args[1]->kind != V_STR) return mk_ref("Obj 拒绝：forget 需要属性名");
+        if (nargs < 2 || args[1]->kind != V_STR) return mk_ref("Obj refused: forget requires a property name");
         var_del(o->obj_fields, args[1]->str);      /* 属性被冲走 */
         return mk_res(o);
     }
     if (strcmp(method, "call") == 0) {
-        if (nargs < 2 || args[1]->kind != V_STR) return mk_ref("Obj 拒绝：call 需要方法名");
+        if (nargs < 2 || args[1]->kind != V_STR) return mk_ref("Obj refused: call requires a method name");
         const char *clsname = o->kind == V_ARR ? "Array" : o->obj_cls;
         Decl *cls = find_class(in, clsname);
         Method *m = cls ? class_method(cls, args[1]->str) : NULL;
         if (!m) {
             char buf[256];
-            snprintf(buf, sizeof buf, "Obj 拒绝：类 %s 没有方法 %s", clsname, args[1]->str);
+            snprintf(buf, sizeof buf, "Obj refused: class %s has no method %s", clsname, args[1]->str);
             return mk_ref(astrdup(buf));
         }
         if (o->kind == V_OBJ) o->obj_fields->parent = in->cur_area;
@@ -393,7 +393,7 @@ Result *obj_request(const char *method, Value **args, int nargs) {
         return mk_res(r->res);
     }
     if (strcmp(method, "class") == 0) return mk_res(mk_str(o->obj_cls));
-    return mk_ref("Obj 拒绝：没有该方法（new/get/set/forget/call/class）");
+    return mk_ref("Obj refused: no such method (new/get/set/forget/call/class)");
 }
 
 /* ---------- Time：Timestream 计时流 ----------
@@ -447,13 +447,13 @@ Result *time_request(const char *method, Value **args, int nargs) {
         int id = (nargs > 0 && args[0]->kind == V_NUM) ? (int)args[0]->num
                  : (int)bts_request("self", NULL, 0)->res->num;
         int first = nargs < 1 || args[0]->kind != V_NUM;
-        if (!timer_obtain(id, first)) return mk_ref("Time 拒绝：计时器已满");
+        if (!timer_obtain(id, first)) return mk_ref("Time refused: timer table full");
         return mk_res(mk_num((double)id));
     }
     if (strcmp(method, "fork") == 0) {
         /* 分叉新计时器：独立 id，允许归零（第一个并不允许，分叉出的允许） */
         Timer *t = timer_obtain(next_timer_id++, 0);
-        if (!t) return mk_ref("Time 拒绝：计时器已满");
+        if (!t) return mk_ref("Time refused: timer table full");
         return mk_res(mk_num((double)t->id));
     }
     if (strcmp(method, "elapsed") == 0) {
@@ -461,22 +461,22 @@ Result *time_request(const char *method, Value **args, int nargs) {
         int id = (nargs > 0 && args[0]->kind == V_NUM) ? (int)args[0]->num
                  : (int)bts_request("self", NULL, 0)->res->num;
         Timer *t = timer_obtain(id, nargs < 1 || args[0]->kind != V_NUM);
-        if (!t) return mk_ref("Time 拒绝：计时器已满");
+        if (!t) return mk_ref("Time refused: timer table full");
         return mk_res(mk_num(now_sec() - t->start));
     }
     if (strcmp(method, "reset") == 0) {
         /* 原稿：默认第一个计时器归线程所有，不允许归零；分叉出的允许归零 */
         if (nargs < 1 || args[0]->kind != V_NUM)
-            return mk_ref("Time 拒绝：第一个计时器（线程默认）不允许归零，请 fork 分叉计时器");
+            return mk_ref("Time refused: first timer (thread default) cannot be reset; use Time::fork()");
         int id = (int)args[0]->num;
         Timer *t = timer_find(id);
-        if (!t) return mk_ref("Time 拒绝：没有这个计时器（Time::start / Time::fork 创建）");
+        if (!t) return mk_ref("Time refused: no such timer (create with Time::start / Time::fork)");
         if (!t->forked)
-            return mk_ref("Time 拒绝：第一个计时器（线程默认）不允许归零，请用 Time::fork() 分叉");
+            return mk_ref("Time refused: first timer (thread default) cannot be reset; use Time::fork()");
         t->start = now_sec();
         return mk_res(mk_str(""));
     }
-    return mk_ref("Time 拒绝：没有该方法（now/sleep/start/fork/elapsed/reset）");
+    return mk_ref("Time refused: no such method (now/sleep/start/fork/elapsed/reset)");
 }
 
 /* ---------- Rem：Remstream 记忆流（默认持久化到内存，可 save/load） ---------- */
@@ -486,27 +486,27 @@ static int nmem = 0;
 
 Result *rem_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "save") == 0) {
-        if (nargs < 2 || args[0]->kind != V_STR) return mk_ref("Rem 拒绝：save 需要（名字, 值）");
+        if (nargs < 2 || args[0]->kind != V_STR) return mk_ref("Rem refused: save requires (name, value)");
         for (int i = 0; i < nmem; i++)
             if (strcmp(mems[i].key, args[0]->str) == 0) { mems[i].val = args[1]; return mk_res(mk_str("")); }
         if (nmem < 256) { mems[nmem].key = args[0]->str; mems[nmem].val = args[1]; nmem++; return mk_res(mk_str("")); }
-        return mk_ref("Rem 拒绝：记忆已满");
+        return mk_ref("Rem refused: memory full");
     }
     if (strcmp(method, "load") == 0) {
-        if (nargs < 1 || args[0]->kind != V_STR) return mk_ref("Rem 拒绝：load 需要名字");
+        if (nargs < 1 || args[0]->kind != V_STR) return mk_ref("Rem refused: load requires a name");
         for (int i = 0; i < nmem; i++)
             if (strcmp(mems[i].key, args[0]->str) == 0) return mk_res(mems[i].val);
-        return mk_ref("Rem 拒绝：没有这条记忆");
+        return mk_ref("Rem refused: no such memory");
     }
     if (strcmp(method, "forget") == 0) {
-        if (nargs < 1 || args[0]->kind != V_STR) return mk_ref("Rem 拒绝：forget 需要名字");
+        if (nargs < 1 || args[0]->kind != V_STR) return mk_ref("Rem refused: forget requires a name");
         for (int i = 0; i < nmem; i++)
             if (strcmp(mems[i].key, args[0]->str) == 0) {
                 mems[i] = mems[--nmem]; return mk_res(mk_str(""));
             }
-        return mk_ref("Rem 拒绝：没有这条记忆");
+        return mk_ref("Rem refused: no such memory");
     }
-    return mk_ref("Rem 拒绝：没有该方法（save/load/forget）");
+    return mk_ref("Rem refused: no such method (save/load/forget)");
 }
 
 /* ---------- Const：Constantstream 常量流（公共常量，设后不可改） ---------- */
@@ -515,20 +515,20 @@ static int nconst = 0;
 
 Result *const_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "set") == 0) {
-        if (nargs < 2 || args[0]->kind != V_STR) return mk_ref("Const 拒绝：set 需要（名字, 值）");
+        if (nargs < 2 || args[0]->kind != V_STR) return mk_ref("Const refused: set requires (name, value)");
         for (int i = 0; i < nconst; i++)
             if (strcmp(consts[i].key, args[0]->str) == 0)
-                return mk_ref("Const 拒绝：常量已存在，不可覆盖");
+                return mk_ref("Const refused: constant already exists, cannot overwrite");
         if (nconst < 128) { consts[nconst].key = args[0]->str; consts[nconst].val = args[1]; nconst++; return mk_res(mk_str("")); }
-        return mk_ref("Const 拒绝：常量表已满");
+        return mk_ref("Const refused: constant table full");
     }
     if (strcmp(method, "get") == 0) {
-        if (nargs < 1 || args[0]->kind != V_STR) return mk_ref("Const 拒绝：get 需要名字");
+        if (nargs < 1 || args[0]->kind != V_STR) return mk_ref("Const refused: get requires a name");
         for (int i = 0; i < nconst; i++)
             if (strcmp(consts[i].key, args[0]->str) == 0) return mk_res(consts[i].val);
-        return mk_ref("Const 拒绝：没有这个常量");
+        return mk_ref("Const refused: no such constant");
     }
-    return mk_ref("Const 拒绝：没有该方法（set/get）");
+    return mk_ref("Const refused: no such method (set/get)");
 }
 
 /* ---------- Ref：智能引用（&权限 跟随 真名） ---------- */
@@ -541,44 +541,44 @@ VarMap *ref_layer_get(Interp *in, const char *follow) {
 
 Result *ref_request(const char *method, Value **args, int nargs) {
     if (nargs < 1 || args[0]->kind != V_REF)
-        return mk_ref("Ref 拒绝：需要引用对象（&权限 跟随 真名）");
+        return mk_ref("Ref refused: requires a reference object (&perm follow name)");
     Value *ref = args[0];
     Interp *in = g_interp;
     const char *perm = ref->ref_perm;
     const char *follow = ref->ref_follow;
     if (!(strcmp(perm, "r") == 0 || strcmp(perm, "w") == 0 ||
           strcmp(perm, "rw") == 0 || strcmp(perm, "m") == 0))
-        return mk_ref("Ref 拒绝：非法引用权限（应为 r/w/rw/m）");
+        return mk_ref("Ref refused: invalid reference permission (should be r/w/rw/m)");
     if (!(strcmp(follow, "u") == 0 || strcmp(follow, "f") == 0 || strcmp(follow, "a") == 0))
-        return mk_ref("Ref 拒绝：非法引用跟随（应为 u/f/a）");
+        return mk_ref("Ref refused: invalid reference follow (should be u/f/a)");
     VarMap *layer = ref_layer_get(in, follow);
 
     if (strcmp(method, "read") == 0) {
         if (strcmp(perm, "w") == 0)
-            return mk_ref("Ref 拒绝：引用是只写权限，不能读");
+            return mk_ref("Ref refused: reference is write-only, cannot read");
         Value *v = var_get_layer(layer, ref->ref_name);
         if (!v) {
             char buf[256];
-            snprintf(buf, sizeof buf, "Ref 拒绝：目标 %s 不存在（%s 层）", ref->ref_name, follow);
+            snprintf(buf, sizeof buf, "Ref refused: target %s does not exist (%s layer)", ref->ref_name, follow);
             return mk_ref(astrdup(buf));
         }
         return mk_res(v);
     }
     if (strcmp(method, "write") == 0) {
         if (strcmp(perm, "r") == 0)
-            return mk_ref("Ref 拒绝：引用是只读权限，不能写");
-        if (nargs < 2) return mk_ref("Ref 拒绝：write 需要值参数");
+            return mk_ref("Ref refused: reference is read-only, cannot write");
+        if (nargs < 2) return mk_ref("Ref refused: write requires a value argument");
         var_set(layer, ref->ref_name, args[1]);
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "move") == 0) {
         /* 可移动（m 权限）：从所在层取走目标并返回其值 */
         if (strcmp(perm, "m") != 0)
-            return mk_ref("Ref 拒绝：move 需要可移动权限（m）");
+            return mk_ref("Ref refused: move requires movable permission (m)");
         Value *v = var_get_layer(layer, ref->ref_name);
         if (!v) {
             char buf[256];
-            snprintf(buf, sizeof buf, "Ref 拒绝：目标 %s 不存在（%s 层）", ref->ref_name, follow);
+            snprintf(buf, sizeof buf, "Ref refused: target %s does not exist (%s layer)", ref->ref_name, follow);
             return mk_ref(astrdup(buf));
         }
         var_del(layer, ref->ref_name);           /* 取走（冲走） */
@@ -588,7 +588,7 @@ Result *ref_request(const char *method, Value **args, int nargs) {
         return mk_res(mk_str(ref->ref_name));
     if (strcmp(method, "perm") == 0)
         return mk_res(mk_str(perm));
-    return mk_ref("Ref 拒绝：没有该方法（read/write/move/target/perm）");
+    return mk_ref("Ref refused: no such method (read/write/move/target/perm)");
 }
 
 /* ---------- 二进制库流（B_BIN）：dlsym 调用 ---------- */
@@ -598,14 +598,14 @@ Result *ref_request(const char *method, Value **args, int nargs) {
 typedef double (*bin_fn)(double, double, double, double, double, double);
 
 Result *bin_request(Stream *s, const char *method, Value **args, int nargs) {
-    if (!s->dl) return mk_ref("二进制流拒绝：库未加载");
+    if (!s->dl) return mk_ref("binary stream refused: library not loaded");
     bin_fn fn = (bin_fn)dlsym(s->dl, method);
-    if (!fn) return mk_ref("二进制流拒绝：库中没有该符号（或不是函数）");
-    if (nargs > 6) return mk_ref("二进制流拒绝：最多支持 6 个参数");
+    if (!fn) return mk_ref("binary stream refused: no such symbol in library (or not a function)");
+    if (nargs > 6) return mk_ref("binary stream refused: at most 6 arguments supported");
     double a[6] = {0};
     for (int i = 0; i < nargs; i++) {
         if (args[i]->kind == V_NUM) a[i] = args[i]->num;
-        else return mk_ref("二进制流拒绝：二进制函数暂只支持数值参数");
+        else return mk_ref("binary stream refused: binary functions support numeric arguments only");
     }
     double r = fn(a[0], a[1], a[2], a[3], a[4], a[5]);
     return mk_res(mk_num(r));
@@ -623,10 +623,10 @@ Result *bin_call_global(const char *method, Value **args, int nargs) {
     for (BinLib *b = binlibs; b; b = b->next) {
         Result *r = bin_request(b->s, method, args, nargs);
         if (!r->ref) return r;              /* 找到并成功 */
-        if (strcmp(r->ref, "二进制流拒绝：库中没有该符号（或不是函数）") != 0)
+        if (strcmp(r->ref, "binary stream refused: no such symbol in library (or not a function)") != 0)
             return r;                       /* 找到符号但调用失败 */
     }
-    return mk_ref("二进制调用拒绝：没有库提供函数 &func");
+    return mk_ref("binary call refused: no library provides function &func");
 }
 
 /* ---------- Com：Comstream 计算流（瞬时流的一个分支，处理各种瞬时计算） ---------- */
@@ -647,7 +647,7 @@ static Result *com_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "max") == 0) return mk_res(mk_num(x > y ? x : y));
     if (strcmp(method, "pow") == 0) return mk_res(mk_num(pow(x, y)));
     if (strcmp(method, "sqrt") == 0) {
-        if (x < 0) return mk_ref("Com 拒绝：sqrt 的实参不能为负");
+        if (x < 0) return mk_ref("Com refused: sqrt argument cannot be negative");
         return mk_res(mk_num(sqrt(x)));
     }
     if (strcmp(method, "floor") == 0) return mk_res(mk_num(floor(x)));
@@ -658,11 +658,11 @@ static Result *com_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "cos") == 0) return mk_res(mk_num(cos(x)));
     if (strcmp(method, "tan") == 0) return mk_res(mk_num(tan(x)));
     if (strcmp(method, "log") == 0) {
-        if (x <= 0) return mk_ref("Com 拒绝：log 的实参必须为正");
+        if (x <= 0) return mk_ref("Com refused: log argument must be positive");
         return mk_res(mk_num(log(x)));
     }
     if (strcmp(method, "exp") == 0) return mk_res(mk_num(exp(x)));
-    return mk_ref("Com 拒绝：没有该方法（abs/min/max/pow/sqrt/floor/ceil/round/sign/sin/cos/tan/log/exp）");
+    return mk_ref("Com refused: no such method (abs/min/max/pow/sqrt/floor/ceil/round/sign/sin/cos/tan/log/exp)");
 }
 
 /* ---------- IO：IOStream（默认存在，可以读取和输出） ----------
@@ -674,7 +674,7 @@ static Result *io_request(const char *method, Value **args, int nargs) {
     if (!r->ref) return r;
     r = sio_request(method, args, nargs);
     if (!r->ref) return r;
-    return mk_ref("IO 拒绝：没有该方法（聚合 CIO/FIO/SIO）");
+    return mk_ref("IO refused: no such method (aggregates CIO/FIO/SIO)");
 }
 
 Result *builtin_request(int kind, const char *method, Value **args, int nargs) {
@@ -694,6 +694,6 @@ Result *builtin_request(int kind, const char *method, Value **args, int nargs) {
         case B_COM: return com_request(method, args, nargs);
         case B_IO: return io_request(method, args, nargs);
         default:
-            return mk_ref("未知内置流");
+            return mk_ref("unknown builtin stream");
     }
 }

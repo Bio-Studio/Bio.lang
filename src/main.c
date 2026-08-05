@@ -370,7 +370,7 @@ int main(int argc, char **argv) {
     printf("🧬 Biolang 解释器原型 (C)\n\n");
     if (argc > 1) {
         FILE *f = fopen(argv[1], "r");
-        if (!f) { fprintf(stderr, "无法打开文件: %s\n", argv[1]); return 1; }
+        if (!f) { fprintf(stderr, "cannot open file: %s\n", argv[1]); return 1; }
         fseek(f, 0, SEEK_END);
         long sz = ftell(f);
         fseek(f, 0, SEEK_SET);

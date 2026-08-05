@@ -65,7 +65,7 @@ Tok *tokenize(const char *src, int *ntok) {
             char b[2] = { *p, 0 };
             toks[n].kind = T_OP; toks[n].text = astrdup(b); p++; n++; continue;
         }
-        fprintf(stderr, "词法错误: 无法识别的字符 %c\n", *p);
+        fprintf(stderr, "lex error: unrecognized character %c\n", *p);
         exit(1);
     }
     toks[n].kind = T_EOF; toks[n].text = ""; n++;

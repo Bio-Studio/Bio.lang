@@ -119,7 +119,7 @@ static void bts_run_until(BThread *target) {
 Result *bts_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "spawn") == 0) {
         if (nargs < 1 || args[0]->kind != V_STR)
-            return mk_ref("BTS 拒绝：spawn 需要方法名字符串（BTS::spawn(\"方法名\", 参数...)）");
+            return mk_ref("BTS refused: spawn requires a method name string (BTS::spawn(\"name\", args...))");
         BThread *t = aalloc(sizeof(BThread));
         t->id = next_id++;
         t->state = 0;
@@ -152,14 +152,14 @@ Result *bts_request(const char *method, Value **args, int nargs) {
     }
     if (strcmp(method, "join") == 0) {
         if (nargs < 1 || args[0]->kind != V_NUM)
-            return mk_ref("BTS 拒绝：join 需要线程 id");
+            return mk_ref("BTS refused: join requires a thread id");
         BThread *t = bts_find((int)args[0]->num);
-        if (!t) return mk_ref("BTS 拒绝：线程不存在");
+        if (!t) return mk_ref("BTS refused: thread does not exist");
         if (t->state != 2) {
-            if (current) return mk_ref("BTS 拒绝：线程内 join 未完成目标暂不支持");
+            if (current) return mk_ref("BTS refused: join inside a thread on an unfinished target not supported yet");
             bts_run_until(t);
         }
-        if (!t->result) return mk_ref("BTS 拒绝：线程无结果");
+        if (!t->result) return mk_ref("BTS refused: thread has no result");
         if (t->result->ref) return mk_ref(t->result->ref);
         return mk_res(t->result->res);
     }
@@ -167,7 +167,7 @@ Result *bts_request(const char *method, Value **args, int nargs) {
         return mk_res(mk_num((double)bts_alive()));
     if (strcmp(method, "self") == 0)
         return mk_res(mk_num((double)(current ? current->id : 0)));
-    return mk_ref("BTS 拒绝：没有该方法（spawn/yield/join/active/self）");
+    return mk_ref("BTS refused: no such method (spawn/yield/join/active/self)");
 }
 
 
@@ -192,17 +192,17 @@ static void taskm_sleep(void) {
 Result *taskm_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "add") == 0) {
         if (nargs < 1 || args[0]->kind != V_STR)
-            return mk_ref("Taskm 拒绝：add 需要方法名字符串（Taskm::add(「方法名」, 参数...)）");
+            return mk_ref("Taskm refused: add requires a method name string (Taskm::add(\"name\", args...))");
         return bts_request("spawn", args, nargs);   /* 复用线程创建 */
     }
     if (strcmp(method, "interval") == 0) {
         if (nargs < 1 || args[0]->kind != V_NUM)
-            return mk_ref("Taskm 拒绝：interval 需要毫秒数");
+            return mk_ref("Taskm refused: interval requires milliseconds");
         taskm_interval_ns = (long)(args[0]->num * 1000000.0);
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "run") == 0) {
-        if (taskm_running) return mk_ref("Taskm 拒绝：调度循环已在运行");
+        if (taskm_running) return mk_ref("Taskm refused: scheduler loop already running");
         taskm_running = 1;
         while (taskm_running && bts_alive() > 0) {
             bts_round();              /* 每线程跑一次（线程内 yield 会提前换出） */
@@ -217,5 +217,5 @@ Result *taskm_request(const char *method, Value **args, int nargs) {
     }
     if (strcmp(method, "active") == 0)
         return mk_res(mk_num((double)bts_alive()));
-    return mk_ref("Taskm 拒绝：没有该方法（add/interval/run/stop/active）");
+    return mk_ref("Taskm refused: no such method (add/interval/run/stop/active)");
 }
