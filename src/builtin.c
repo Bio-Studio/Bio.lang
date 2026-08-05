@@ -31,7 +31,12 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "print") == 0) {
-        for (int i = 0; i < nargs; i++) print_value(args[i]);
+        for (int i = 0; i < nargs; i++) {
+            /* 成功 Result 自动解包显示（res(x) → x），与 println 一致 */
+            if (args[i]->kind == V_RES && args[i]->res && !args[i]->res->ref)
+                print_value(args[i]->res->res);
+            else print_value(args[i]);
+        }
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "write") == 0) {
@@ -124,6 +129,8 @@ static Result *sio_request(const char *method, Value **args, int nargs) {
             if (fmt[i] == '%' && fmt[i+1] && strchr("disfx", fmt[i+1]) && ai < nargs) {
                 char c = fmt[++i];
                 Value *v = args[ai++];
+                /* 成功 Result 自动解包（res(x) → x），与 println 一致 */
+                if (v->kind == V_RES && v->res && !v->res->ref) v = v->res->res;
                 if (c == 's') { const char *s = arg_str(args, nargs, ai-1, ""); oi += snprintf(out+oi, 2048-oi, "%s", s); }
                 else if (c == 'f') oi += snprintf(out+oi, 2048-oi, "%g", v->kind == V_NUM ? v->num : 0);
                 else oi += snprintf(out+oi, 2048-oi, "%ld", v->kind == V_NUM ? (long)v->num : 0);
