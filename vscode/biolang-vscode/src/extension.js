@@ -3,7 +3,8 @@
  * 功能：语法高亮、代码片段、运行命令（bio CLI）、流方法补全（Qual::）、智能引用补全（&）
  */
 const vscode = require('vscode');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
+const path = require('path');
 
 /* 内置子流的方法表 */
 const STREAMS = {
@@ -309,21 +310,110 @@ function activate(context) {
   }, ':', '&', '.', ' ');
 
   /* ---------- 运行命令 ---------- */
+  /* Webview 交互式运行面板 HTML：输出区 + 输入框（输入直接进 CIO/stdin） */
+  function panelHtml(fileName) {
+    return `<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { margin:0; font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; display:flex; flex-direction:column; height:100vh; }
+  header { padding:8px 12px; background: var(--vscode-titleBar-activeBackground); border-bottom:1px solid var(--vscode-panel-border); display:flex; align-items:center; gap:10px; }
+  header .dot { width:9px; height:9px; border-radius:50%; background:#888; }
+  header.running .dot { background:#4ecb71; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  header .name { font-weight:600; }
+  header .status { opacity:.75; font-size:12px; }
+  #out { flex:1; overflow:auto; padding:10px 12px; white-space:pre-wrap; word-break:break-all; }
+  #out .err { color: var(--vscode-errorForeground, #f14c4c); }
+  #out .done { opacity:.6; margin-top:8px; }
+  .inputrow { display:flex; border-top:1px solid var(--vscode-panel-border); }
+  .inputrow input { flex:1; border:none; background:transparent; color:var(--vscode-input-foreground); padding:9px 12px; outline:none; font-family:inherit; }
+  .inputrow button { border:none; border-left:1px solid var(--vscode-panel-border); background:var(--vscode-button-background); color:var(--vscode-button-foreground); padding:0 16px; cursor:pointer; }
+  .inputrow button:disabled { opacity:.4; cursor:default; }
+</style>
+</head>
+<body>
+  <header id="hd"><span class="dot"></span><span class="name">${escapeHtml(fileName)}</span><span class="status" id="st">running…</span></header>
+  <div id="out"></div>
+  <div class="inputrow">
+    <input id="in" placeholder="输入 (Enter 发送到 CIO)…" autofocus>
+    <button id="send" disabled>发送</button>
+  </div>
+<script>
+  const vscode = acquireVsCodeApi();
+  const out = document.getElementById('out');
+  const input = document.getElementById('in');
+  const send = document.getElementById('send');
+  const st = document.getElementById('st');
+  const hd = document.getElementById('hd');
+  function append(text, cls) {
+    const el = document.createElement('span');
+    if (cls) el.className = cls;
+    el.textContent = text;
+    out.appendChild(el);
+    out.scrollTop = out.scrollHeight;
+  }
+  function done(code) {
+    hd.classList.remove('running');
+    st.textContent = code === 0 ? 'done' : 'exited (' + code + ')';
+    input.disabled = send.disabled = true;
+    append(code === 0 ? '[exit 0]' : '[exit ' + code + ']', 'done');
+  }
+  function sendInput() {
+    const v = input.value;
+    if (v === '') return;
+    vscode.postMessage({ type: 'input', text: v });
+    append(v + '\\n');
+    input.value = '';
+    input.focus();
+  }
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') sendInput(); });
+  send.addEventListener('click', sendInput);
+  window.addEventListener('message', ev => {
+    const m = ev.data;
+    if (m.type === 'out') append(m.text, '');
+    else if (m.type === 'err') append(m.text, 'err');
+    else if (m.type === 'ready') { send.disabled = false; input.focus(); }
+    else if (m.type === 'done') done(m.code);
+  });
+</script>
+</body>
+</html>`;
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
   const runFile = vscode.commands.registerCommand('biolang.runFile', async () => {
     const doc = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
     if (!doc) { vscode.window.showWarningMessage('没有打开的文件'); return; }
     if (doc.languageId !== 'biolang') { vscode.window.showWarningMessage('当前文件不是 BioLang（.bl/.bio）'); return; }
     await doc.save();
-    const out = vscode.window.createOutputChannel('BioLang');
-    out.show(true);
-    out.appendLine(`$ bio ${doc.fileName}`);
+    const fileName = doc.fileName;
+    const panel = vscode.window.createWebviewPanel(
+      'biolangRun', `BioLang — ${path.basename(fileName)}`, vscode.ViewColumn.One,
+      { enableScripts: true, retainContextWhenHidden: true }
+    );
+    panel.webview.html = panelHtml(fileName);
     const cwd = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]
-      ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
-    execFile('bio', [doc.fileName], { cwd }, (err, stdout, stderr) => {
-      if (stdout) out.append(stdout);
-      if (stderr) out.append(stderr);
-      if (err) out.appendLine(`[bio 退出码 ${err.code}]（确认 bio 在 PATH 中：~/.local/bin/bio）`);
+      ? vscode.workspace.workspaceFolders[0].uri.fsPath : path.dirname(fileName);
+    /* 交互式子进程：stdout/stderr → 面板，面板输入 → stdin（CIO） */
+    const child = spawn('bio', [fileName], { cwd });
+    let killed = false;
+    child.stdout.on('data', d => panel.webview.postMessage({ type: 'out', text: d.toString() }));
+    child.stderr.on('data', d => panel.webview.postMessage({ type: 'err', text: d.toString() }));
+    child.on('error', e => panel.webview.postMessage({ type: 'err', text: '[bio] ' + e.message + '\n' }));
+    child.on('close', code => {
+      if (!killed) panel.webview.postMessage({ type: 'done', code });
     });
+    panel.webview.onDidReceiveMessage(msg => {
+      if (msg.type === 'input') {
+        if (child.stdin.writable) child.stdin.write(msg.text + '\n');
+      }
+    });
+    panel.onDidDispose(() => { killed = true; child.kill(); });
+    panel.webview.postMessage({ type: 'ready' });
   });
 
   const runDemo = vscode.commands.registerCommand('biolang.runDemo', () => {

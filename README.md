@@ -35,7 +35,7 @@ src/
 - **语法高亮**：`.bl` / `.bio` 文件（关键字含 `cause`/类型 int·float·double·string·char/字符串/数字/调用/注释/运算符/智能引用 `&r u x`）
 - **代码片段**：main 骨架、stream 签名（参数 `a int`）、fork 分叉、class、res/ref cause、need（含 Class）、sref 智能引用、bins/bincall 二进制库、spawn 线程、taskm、if/while/for
 - **补全**：`流::` 方法补全（内置 CIO/FIO/SIO/Array/Threads/Taskm/Ref/Console + 文档中声明的流）、`&` 智能引用权限 r/w/rw → 跟随层 u/m/a 两级提示
-- **运行命令**：`BioLang: 运行当前文件 (bio)`（编辑器右上角按钮 + 命令面板）、`BioLang: 运行内置演示`
+- **运行命令**：`BioLang: 运行当前文件 (bio)`（编辑器右上角按钮 + 命令面板）打开 **Webview 交互式面板**——程序输出实时显示，底部输入框可直接向 CIO 提供多次输入（Enter 发送）；`BioLang: 运行内置演示` 直接跑
 - 重启 VS Code（或 "Developer: Reload Window"）后生效；运行命令依赖 `bio` 在 PATH（`~/.local/bin/bio`）
 
 ## 已实现的语言特性
@@ -66,7 +66,7 @@ src/
 | **变量修饰** | `const int x = 10;` → Constantstream（只读，重复声明/修改拒绝，方法内与**顶层**均可）；`int x = 10;` → 作用域流；`thread int x = 10;` → 线程变量（线程作用域） | `const int PI = 3;` 改 PI → 拒绝「常量不能修改」 |
 | 运算 | `+ - * / == != < > <= >=`、数字、字符串、变量；**复合赋值** `+= -= *= /= %=`（变量、`this::属性`、数组元素均可）；**自增自减** `i++` / `i--`；**数组下标** `a[i]` 读写 | `ALL y = x.res * 2 + 1;`、`this::n += 1;`、`for (int i = 0; i < n; i++) { a[i] = i; }` |
 | 基本类型 | `int` `float` `double` `string` `char`（字段：`int n;` 类型 对象） | |
-| **数组/Vector（Bio 类）** | Array/Vector 是 **Bio 代码实现的类**（非解释器内置），底层调 Solid 连续流；`new Array(n)`/`new Vector()` 创建；**数组字面量** `new int[n]`；方法 `__init__/len/get/set/push/pop/clear/join` | `ALL a = new Array(3); a::set(0, 10); a::push(40); a::len().res; a::join("-").res`；`int[] a = new int[12];` |
+| **数组/Vector（Bio 类）** | Array/Vector 是 **Bio 代码实现的类**（非解释器内置），底层调 Solid 连续流；`new Array(n)`/`new Vector()` 创建；**数组字面量** `new type[n]` **类型通用**（基本类型与自定义类均可）；方法 `__init__/len/get/set/push/pop/clear/join` | `ALL a = new Array(3); a::set(0, 10); a::push(40); a::len().res; a::join("-").res`；`int[] a = new int[12];`、`ALL hs = new Hero[3];` |
 | **Solid 连续流** | 连续存储 + 自动分配 + **移动头指针**；`new/len/get/set/push/pop/read/peek/head/resetHead/clear/join` | `ALL s = Solid::new().res; Solid::read(s).res`（头指针前进） |
 | **Arrays 集合流** | 包含所有 Array/Vector 实例；new 一个 Array 默认插入（__init__ 里 `Arrays::add(this)`，Bio 代码可见）；`count/all/get/add/forget`；动态数组 `vector()` | `Arrays::count().res`、`ALL v = Arrays::vector(); v::push(10);` |
 | **二进制库流** | `Stream 名 & "文件.so" {}`；库导出函数自动成为流方法；`&func(...)` 全局二进制调用 | `Stream m & "libm.so" {}` → `m::sin(1.0)`；`&pow(2,10)` |

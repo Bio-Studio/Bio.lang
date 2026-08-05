@@ -54,10 +54,10 @@ Node *parse_primary(Parser *p) {
     if (t->kind == T_NUM) { e = mk_node(N_NUM); e->num = t->num; }
     else if (t->kind == T_STR) { e = mk_node(N_STR); e->str = t->text; }
     else if (t->kind == T_KW && strcmp(t->text, "new") == 0) {
-        /* new int[12] → 数组字面量：Obj::new("Array", n) */
-        if (peek(p)->kind == T_ID && is_type_name(peek(p)->text) &&
+        /* new type[12] → 数组字面量（类型通用，含自定义类）：Obj::new("Array", n) */
+        if (peek(p)->kind == T_ID &&
             p->i + 1 < p->n && p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "[") == 0) {
-            next(p);                      /* 类型 int */
+            next(p);                      /* 类型 int / Hero */
             next(p);                      /* [ */
             Node *sz = parse_expr(p);     /* 长度 */
             expect_op(p, "]");
