@@ -1,40 +1,36 @@
-# Biolang
+# BioLang — Design
 
-## 引擎
+## The engine: streams
 
-流
+1. **Unistream** — the unified stream, an abstract concept every stream belongs to.
+2. **Comstream** — the computation stream, a branch of transient streams that handles all kinds of instant computations.
+3. **Remstream** — the memory stream; a program remembers things while it runs. By default it persists and recalls memory (users may override the persist and recall methods).
+4. **Objstream** — the object stream, a branch of the memory stream dedicated to relations and data between objects. Every object is also a stream storing its own attributes (if an attribute is washed away, calling certain methods refuses outright).
+5. **Threadstream** — the process/thread stream; a process usually contains a computation stream, a memory stream, a timing stream and an IO stream, and a process can split off several processes/threads.
+6. **Timestream** — the timing stream; it can own several timers at once. By default the first timer belongs to the thread and may not be reset to zero; forked second/third timers may.
+7. **IOStream** — the IO stream, present by default; it can read and output.
+8. **CustomStream** — custom streams; streams are not limited to the kinds above — they can be composed and combined with binary programs.
+9. **Mainstream** — the main program stream; whenever a program is a main program, its `exec()` method is invoked directly.
+10. **Functionstream** — the function stream; it supports forking several functions, directly under Unistream. In this language, a *function* means a shared, quick toolbox.
+11. **Constantstream** — the constant stream; it supports forking several constants, under Unistream and Threadstream. In the terms of this language: public constants and private constants.
+12. **Areastream** — the scope stream; it contains a memory stream.
+13. **Taskmstream** — the task-manager stream that schedules automatically; it contains a Threadstream.
+14. **Solidstream** — the contiguous stream; it stores data contiguously, auto-allocates and moves a head pointer. (The ordinary Array class and the Vector class are implemented in Bio code, not in the interpreter.)
+15. **CIOStream** — the Console implementation of IOStream.
+16. **FIOStream** — the File implementation of IOStream.
+17. **SIOStream** — the String implementation of IOStream.
 
-1. Unistream ---- 统一流，一个抽象概念
-2. Comstream ---- 计算流，瞬时流的一个分支，用来处理各种瞬时计算。
-3. Remstream ---- 记忆流，程序运行时记住一些东西，默认拥有方法持久化和读取记忆（用户可以覆盖持久化和读取记忆方法）。
-4. Objstream ---- 对象流，记忆流的一个分支，专门用来处理各种对象之间的关系和数据，每个对象也是一个流，储存了对象的各种属性（如果属性被冲走，那么调用某些方法就会直接发出拒绝）。
-5. Threadstream ---- 进程流，一个进程通常包含计算流、记忆流、时间流、IO流，进程流可以切出多个进程。
-6. Timestream ---- 计时流，可以同时拥有多个计时器，默认第一个计时器归线程所有，计时器还可以归零，但第一个并不允许，分叉出的第二个三个就允许。
-7. IOStream ---- IO流，默认存在，可以读取和输出。
-8. CustomStream ---- 自定义流，流并不是只有上面几种，而是可以组合和与二进制程序结合的。
-9. Mainstream ---- 主程序流，只要一个程序是主程序就会直接调用这个流的exec()方法。
-10. Functionstream ---- 函数流，支持分叉多个函数，这直属Unistream。在本语言中Function的意思是共用的快速的工具箱。
-11. Constantstream ---- 常量流，支持分叉多个常量，这可属Unistream和Threadstream。术语分别叫公共常量、私有常量。
-12. Areastream ---- 作用域流，包含记忆流。
-13. Taskmstream ---- 自动进行任务调度的管理器流，包含Threadstream
-14. Solidstream ----　连续流，自动存储连续的数据，可以自动分配移动头指针。 (普通数组类和Vector类都是在Bio代码里实现的，而非解释器里)
-15. CIOStream ---- IOStream的Console实现
-16. FIOStream ---- IOStream的文件实现
-17. SIOStream ---- SIOStream的字符串实现。
+## Syntax
 
-## 语法
-
-操作
-
-定义变量修饰
+### Variable modifiers
 
 ```
-const int x = 10; // Constantstream里加入东西。
-int x = 10; // 默认在作用域流里加入东西。
-thread int x = 10; // 线程变量。
+const int x = 10; // adds to Constantstream
+int x = 10;       // adds to the scope stream by default
+thread int x = 10; // thread variable
 ```
 
-基础类型
+### Base types
 
 ```
 int
@@ -44,66 +40,65 @@ string
 char
 ```
 
-Biolang里的所有操作都是请求，请求自然是可以拒绝的，我们用以下语法表示：
+Every operation in BioLang is a request, and a request may naturally be refused. We express this with the following syntax:
 
 ```
-ref ...; // 这里的...可以是任何变量
+ref ...; // the ... may be any variable
 ```
 
-你的请求一般都是有回应的，我们的函数要显示调用回应和拒绝，以以下语法表示:
+Requests generally expect a response; our functions call respond and refuse explicitly, with the following syntax:
 
 ```
-res add(a, b); // add(a,b)的结果
-cause add(a, b); // add(a,b)拒绝的原因
-ALL result = add(a, b); // ALL是一种包含res和cause的结构。
+res add(a, b);      // the result of add(a,b)
+cause add(a, b);    // the reason add(a,b) was refused
+ALL result = add(a, b); // ALL is a structure containing both res and cause
 res result;
 cause result;
-// 和上面的差不多但更灵活
+// the above and more flexible equivalents
 ```
 
-流语法
+### Stream syntax
 
-自定义流
+Custom stream:
 
 ```
 Stream SStream {
-    void hello(); // 签名
-    int flag; // 分叉流时可以自定义。
+    void hello(); // signature
+    int flag;     // custom field, usable when forking the stream
 }
-
 ```
 
-自定义类（类在Biolang本质也是一种流）
+Custom class (a class is essentially a stream in BioLang):
 
 ```
-Class CClass{ // 这里的Class是分叉Class流的意思
+Class CClass {    // Class here means forking the Class stream
     void __init__() {
         ...
     }
-    int n; // 默认对象类型
-    int[] a; // 默认对象泛型
+    int n;    // default object field
+    int[] a;  // default object array
     /*
-    或:
-    type T; // 接近于泛型，但更灵活。
+    or:
+    type T;   // close to generics, but more flexible
     T n;
     T[] a;
     */
 }
 ```
 
-创建对象
+Creating an object:
 
 ```
 CClass c = new CClass();
 ```
 
-调用流
+Calling a stream:
 
 ```
 stream::hello();
 ```
 
-分叉流
+Forking a stream:
 
 ```
 SStream SSStream {
@@ -113,64 +108,59 @@ SStream SSStream {
 }
 ```
 
-主程序流
+Main program stream:
 
 ```
+program main; // declares this is a main program
 
-program main; // 声明这是个主程序
-
-Main { // 这种方式是直接覆盖一个已经存在的流
-    void exec() { // exec()支持动态返回结果值，因为他们接受返回值用的是所有对象的初始流Objastream。
+Main { // overwrites an already-existing stream directly
+    void exec() { // exec() supports dynamic return values, since return values are accepted via the root stream Objstream
         IO::print("Hello World!");
     }
 }
 ```
 
-声明语法
+Declaration syntax:
 
 ```
 program main;
 ```
 
 ```
-program utils; // 声明这是个工具箱。
+program utils; // declares this is a toolbox
 ```
 
-假设语法
+### Assumption syntax
 
-假设流
-
-```
-
-need Stream ... { ... } ; // 第一个空是stream的名称，第二个空是需要的东西，这种语法必须与工具箱结合。
+Assume a stream:
 
 ```
-
-假设量
-
-```
-need value ...; // 第一个空是量的名称。
+need Stream ... { ... } ; // first ... is the stream name, second ... what is needed; must combine with a toolbox
 ```
 
-假设类
+Assume a value:
+
+```
+need value ...; // the ... is the name of the value
+```
+
+Assume a class:
 
 ```
 need Class ... {...};
 ```
 
-假设函数
+Assume a function:
 
 ```
-need function ...; // 第一个空是函数的名称
+need function ...; // the ... is the name of the function
 ```
 
-第三个和第二个本质上都是第一个假设流的变体。
+The third and second forms are essentially variants of the first assumption form. Assumption syntax is a special, standalone syntax.
 
-假设语法是一种特殊的独立的语法。
+### Smart references
 
-智能引用
-
-r, w, rw, m(可以移动) \* u (整体), f (方法), a （作用域）
+`r`, `w`, `rw`, `m` (movable) \* `u` (unit/program-level), `f` (function/method), `a` (area/scope)
 
 ```
 realme &r u int
@@ -180,6 +170,6 @@ realme &m f int
 ...
 ```
 
-## 方式
+## Modes
 
-本语言可以解释也可以编译。
+This language can be interpreted as well as compiled.

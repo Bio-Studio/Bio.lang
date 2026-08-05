@@ -1,140 +1,192 @@
-# BioLang — 解释器原型 (C)
+# BioLang — A Stream-Oriented Language in C (Interpreter + Compiler)
 
-Biolang 语言的 C 实现，**既可以解释也可以编译**。命令行工具名为 **`bio`**。
+BioLang is an **open-source, C-based programming language** that runs as both an **interpreter** and a **compiler**. Its design is **stream-oriented**: every operation is a *request* that can be *responded* (`res`) or *refused* (`cause`). Write a `.bio` file and either interpret it with `bio`, or compile it into a **standalone native executable** with `bio -b`. MIT licensed.
 
-## 构建与运行
-
-```bash
-make              # 编译 → ./bio（同时生成 libbio.a，编译功能用）
-make install      # 安装到 ~/.local/bin/bio
-
-bio               # 跑内置 13 个演示
-bio 程序.bio      # 运行 BioLang 源文件（解释）
-bio -r 程序.bio   # 显式运行（解释）
-bio -b 程序.bio [-o 输出]   # 编译 → 自包含原生可执行文件
-bio --tokens x.bl # 查看词法分析结果（调试用）
-bio -h            # 帮助
+```bio
+program main;
+Main {
+    void exec() {
+        IO::println("Hello, BioLang!");
+    }
+}
 ```
 
-### 项目式编译运行
+## Quick highlights
 
-项目结构：`package.toml`（清单）+ `src/`（源码，`main.bio` 入口）+ `utils/`（库）+ `.biolang/deps/`（依赖）。
+- **Streams everywhere** — streams are first-class values that can be forked, passed as arguments, and composed.
+- **Request/response model** — every call returns a result that may be `res` (responded) or `cause` (refused); unwrap with `.res` / `.cause` or the prefix operators `res X` / `cause X`.
+- **Objects & classes** — `Class` declarations, `new`, automatic `__init__`, `this`, object methods.
+- **Interpret or compile** — `bio` interprets; `bio -b` emits a self-contained native executable (no `bio` needed at runtime).
+- **Concurrency** — cooperative threads (`Threads`) and a round-robin task manager (`Taskm`).
+- **Binary interop** — link native `.so` libraries and call their functions directly (`&func()`, `Stream m & "libm.so"`).
+- **Smart references** — `&perm follow name` (`r/w/rw/m` × `u/f/a`) with a `Ref` API for read/write/move.
+
+## Build & run
 
 ```bash
-bio init <name>         # 创建项目骨架
-bio build [dir] [-o 输出] # 项目编译：按需捆绑 need + 校验 + 编译
-bio run [dir]           # 项目运行（解释）
-bio install [dir]       # 安装 package.toml 依赖
-bio destroy [dir]       # 删除构建产物（.biolang/、app）
+make              # build → ./bio (also builds libbio.a for the compiler)
+make install      # install to ~/.local/bin/bio
+
+bio               # run the 13 built-in demos
+bio program.bio   # run a BioLang source file (interpret)
+bio -r program.bio # explicit run (interpret)
+bio -b program.bio [-o output]  # compile → self-contained native executable
+bio --tokens x.bl # dump lexer tokens (debug)
+bio -h            # help
 ```
 
-- **need 捆绑**：从 `main` 入口开始按需收集 `need` 的提供者（`src/` + `utils/` + `.biolang/deps/`），递归直到闭包稳定；**任何 need 无提供者 → 直接报错**。签名流名调用自动回退实现流（`Calc::add` → 实现流）。
-- **package.toml**：标准字段 `name`/`version`/`repo` + `[dependencies]`（`name = { version=.., repo=.. }`，repo 可选）。
-- **repo 解析顺序**：依赖自身 `repo` → 环境变量 `BIOLANG_CONFIG` 指向的全局配置文件里的 `repo` → 系统默认 `~/.biolang/config.toml`。
-- **依赖拉取**：全支持 git 仓库 / HTTP 下载 / 本地路径。
+### Project-based build & run
 
-示例 package.toml：
+A project has `package.toml` (manifest) + `src/` (source, `main.bio` is the entry) + `utils/` (libraries) + `.biolang/deps/` (dependencies).
+
+```bash
+bio init <name>           # create a project skeleton
+bio build [dir] [-o out]  # on-demand `need` bundling + validation + compile
+bio run [dir]             # run a project (interpret)
+bio install [dir]         # install package.toml dependencies
+bio destroy [dir]         # remove build artifacts (.biolang/, app)
+```
+
+- **`need` bundling** — starting from the `main` entry, providers for every `need` are collected recursively (from `src/` + `utils/` + `.biolang/deps/`) until the closure stabilizes; **any `need` without a provider is an error**. A call by signature-stream name falls back to its implementation stream (`Calc::add` → implementation stream).
+- **package.toml** — standard fields `name`/`version`/`repo` + `[dependencies]` (`name = { version=.., repo=.. }`, `repo` optional).
+- **repo resolution order** — dependency's own `repo` → `repo` from the global config file pointed to by `BIOLANG_CONFIG` → system default `~/.biolang/config.toml`.
+- **Dependency fetching** — supports git repos, HTTP downloads, and local paths.
+
+Example `package.toml`:
+
 ```toml
 name = "myapp"
 version = "0.1.0"
 [dependencies]
-libfoo = { version = "1.0.0", repo = "/path/to/libfoo" }   # 或 git/http 地址
+libfoo = { version = "1.0.0", repo = "/path/to/libfoo" }   # or a git/http URL
 ```
 
-### 编译模式（`-b`）
+### Compile mode (`-b`)
 
-`bio -b 程序.bio` 把程序编译成**自包含的原生可执行文件**（源码嵌入 + 链接解释器运行时 `libbio.a`），运行时不再需要 `bio` 或源码。默认输出名 = 源文件去掉扩展名（`example.bio` → `example`），可用 `-o` 指定。
+`bio -b program.bio` compiles a program into a **self-contained native executable** (source embedded + interpreter runtime linked via `libbio.a`). At runtime it needs neither `bio` nor the source. The default output name is the source file without its extension (`example.bio` → `example`); use `-o` to override.
 
 ```bash
 bio -b example.bio -o example
-./example          # 独立运行，无需 bio
+./example          # runs standalone, no bio required
 ```
 
-## 代码结构（多模块）
+## Examples
+
+The [`examples/`](examples/) directory contains runnable, heavily-commented programs that walk through the language feature by feature — a great way to learn what BioLang can do:
+
+| Example | Teaches |
+|---|---|
+| [examples/01-hello.bio](examples/01-hello.bio) | Hello World, `program main`, `Main { void exec() }` |
+| [examples/02-requests.bio](examples/02-requests.bio) | Request model: `res`/`cause`/`ref`, unwrapping `.res`/`.cause`, forwarding |
+| [examples/03-control-flow.bio](examples/03-control-flow.bio) | `if`/`else if`/`else`, `while`, `for`, `break`/`continue` |
+| [examples/04-streams-fork.bio](examples/04-streams-fork.bio) | Signature streams, forked implementations, bare calls |
+| [examples/05-io-substreams.bio](examples/05-io-substreams.bio) | CIO / FIO / SIO / IO aggregate: text & byte streams |
+| [examples/06-classes-objects.bio](examples/06-classes-objects.bio) | `Class`, `new`, `__init__`, `this`, object methods, `Obj::set/get` |
+| [examples/07-arrays.bio](examples/07-arrays.bio) | Array/Vector (Bio classes), Solid streams, the Arrays collection |
+| [examples/08-multi-return.bio](examples/08-multi-return.bio) | Multiple return types, `res a, b, c` → array |
+| [examples/09-threads.bio](examples/09-threads.bio) | Cooperative threads: spawn/yield/join/active/self |
+| [examples/10-taskm.bio](examples/10-taskm.bio) | Task manager: add/interval/run/stop/active |
+| [examples/11-smart-refs.bio](examples/11-smart-refs.bio) | Smart references, `Ref::read/write/move`, const/thread variables |
+| [examples/12-computation.bio](examples/12-computation.bio) | `Com` computation stream + `Time` timers |
+| [examples/13-need.bio](examples/13-need.bio) | `need value/function/stream/Class` assumptions |
+| [examples/14-binary-lib.bio](examples/14-binary-lib.bio) | Binary library streams (`Stream m & "libm.so"`) |
+| [examples/project/](examples/project/) | A complete project: package.toml + src/ + utils/ (run with `bio build`/`bio run`) |
+
+Run any example with:
+
+```bash
+bio examples/01-hello.bio
+```
+
+## Code structure (multi-module)
 
 ```
 src/
-├── bio.h        # 公共头：类型定义 + 模块 API
-├── arena.c      # 简易内存池（aalloc/astrdup）
-├── lexer.c      # 词法分析（tokenize）
-├── parser.c     # 语法分析（AST 构建，公开 parse_program_tokens）
-├── value.c      # 值 / 请求结果模型（res/ref）
-├── builtin.c    # 内置流（CIO/FIO/SIO/IO/Com/Time/Rem/Solid/Array/Ref/…）
-├── bts.c        # Threads 协作式线程 + Taskm 任务调度
-├── interp.c     # 解释器（流注册表、求值、假设检查、run_source）
-├── compile.c    # 编译器（bio -b：源码嵌入 + 链接 libbio.a）
-└── main.c       # 入口 + CLI（-b/-r/--tokens）+ 内置演示
+├── bio.h        # public header: type definitions + module APIs
+├── arena.c      # simple memory pool (aalloc/astrdup)
+├── lexer.c      # lexing (tokenize)
+├── parser.c     # parsing (AST construction, exposes parse_program_tokens)
+├── value.c      # value / request-result model (res/ref)
+├── builtin.c    # builtin streams (CIO/FIO/SIO/IO/Com/Time/Rem/Solid/Array/Ref/...)
+├── bts.c        # Threads cooperative threads + Taskm task scheduler
+├── interp.c     # interpreter (stream registry, eval, assumption checks, run_source)
+├── compile.c    # compiler (bio -b: embed source + link libbio.a)
+└── main.c       # entry + CLI (-b/-r/--tokens) + built-in demos
 ```
 
-## VSCode 插件
+## VSCode plugin
 
-目录：`vscode/biolang-vscode/`（已安装到 `~/.vscode/extensions/bio.biolang-0.2.1`）
+Located at `vscode/biolang-vscode/` (installable to `~/.vscode/extensions`).
 
-- **语法高亮**：`.bl` / `.bio` 文件（关键字含 `cause`/类型 int·float·double·string·char/字符串/数字/调用/注释/运算符/智能引用 `&r u x`）
-- **代码片段**：main 骨架、stream 签名（参数 `a int`）、fork 分叉、class、res/ref cause、need（含 Class）、sref 智能引用、bins/bincall 二进制库、spawn 线程、taskm、if/while/for
-- **补全**：`流::` 方法补全（内置 CIO/FIO/SIO/Array/Threads/Taskm/Ref/Console + 文档中声明的流）、`&` 智能引用权限 r/w/rw → 跟随层 u/m/a 两级提示
-- **运行命令**：`BioLang: 运行当前文件 (bio)`（编辑器右上角按钮 + 命令面板）打开 **Webview 交互式面板**——程序输出实时显示，底部输入框可直接向 CIO 提供多次输入（Enter 发送）；`BioLang: 运行内置演示` 直接跑
-- 重启 VS Code（或 "Developer: Reload Window"）后生效；运行命令依赖 `bio` 在 PATH（`~/.local/bin/bio`）
+- **Syntax highlighting** — `.bl` / `.bio` files (keywords incl. `cause`, types `int`/`float`/`double`/`string`/`char`, strings, numbers, calls, comments, operators, smart refs `&r u x`).
+- **Code snippets** — main skeleton, stream signatures (`a int` args), fork, class, res/ref cause, need (incl. Class), sref smart refs, bins/bincall binary libs, spawn threads, taskm, if/while/for.
+- **Completions** — `Stream::` method completion (builtin CIO/FIO/SIO/Array/Threads/Taskm/Ref/Console + streams declared in docs), and `&` smart-ref permission `r/w/rw` → follow `u/m/a` hints.
+- **Run commands** — `BioLang: Run current file (bio)` (editor button + command palette) opens a **Webview interactive panel** — program output streams live, and the input box feeds stdin to `CIO`; `BioLang: Run built-in demos` runs them directly.
+- Reload VS Code (or "Developer: Reload Window") after installing; the run commands need `bio` on PATH (`~/.local/bin/bio`).
 
-## 已实现的语言特性
+## Implemented language features
 
-| 特性 | 语法 | 示例 |
+| Feature | Syntax | Example |
 |---|---|---|
-| 主程序 | `program main;` + `Main { void exec() { ... } }` | `Main { void exec() { CIO::println("Hi"); } }` |
-| 流签名 | `Stream S { int add(a int, b int); }`（参数语法唯一：名称 类型） | `Stream Calc { int add(a int, b int); }` |
-| 流分叉 | `S Impl { void m(...) { ... } }` | `Calc MyCalc { void add(a int, b int) { res a + b; } }` |
-| 类声明 | `Class C { void __init__() {...} int hp; int[] a; }` | 本质也是流，方法不需要 overwrite |
-| **字段声明** | 类/流可声明属性，**方法和字段任意顺序交错**，支持逗号分隔：`int x, y;` / `int[] a;` / `string s;` / `type T; T n; T[] a;`（泛型风格）。`new` 时按类型物化默认值（数值 0 / 字符串 "" / 数组 []） | `Class Vector { int x, y; }` → `v.x`、`v::x`、`this::x` 都可读写 |
-| **new 实例化** | `new Class(args...)` → 分叉类流 + 自动调 `__init__(args...)`，返回对象（Result 包）；**无任何特判**，所有类（含内置 Array）同一条路 | `ALL h = new Hero("TAK", 88);`、`ALL a = new Array(3);` → `h.hp`、`h::getName()` |
-| **对象模型** | 对象方法里 `this` = 对象本身；`Obj::new/get/set/forget/call/class`；对象流调用 `obj::method()`。方法内**裸名赋值**命中已声明字段 → 写实例属性（`x = x;` 即 `this::x = x;`），读取优先取参数/本地 | `Obj::set(this, "hp", 88);`、`ALL nm = h::getName();`、`__init__(x int) { x = x; }` |
-| **流/对象作为参数** | 流是一等值，可作方法参数并调用其方法；也支持智能引用修饰参数 `&权限 跟随 名 类型` | `void show(cio CIO) { cio::println(...); }`、`v::show(CIO)`；`void show(&w f io IO) { io::println(...); }`、`v::show(&w f CIO)`；`void add(&r f vec Vector) { this::x += vec::x; }` |
-| 请求/回应/拒绝 | `res expr;` 回应；`cause expr;` 拒绝（原稿语法）；兼容 `ref cause ...;` | 方法内 `res a + b;` 或 `cause "除数不能为 0";` |
-| **多返回类型** | 方法可声明返回类型 `void/int/float/double/string/char`（可带 `[]` 数组），**所有流统一**：签名流/分叉/Class/Main | `int add(a int, b int) { res a + b; }`、`string[] titles() { res "勇者", "传说"; }` |
-| **res 多值** | `res a, b, c;` 逗号分隔 → 返回数组 | `res 1, 2, 3;` → `[1, 2, 3]`；单值 `res x;` 保持原样 |
-| 请求结果 | `ALL x = 流::方法(...);` | `ALL r = MyCalc::add(3, 4);` |
-| 结果解包 | **`res X` / `cause X` 前缀提取运算符**（原稿语法：`res add(a,b)` 取结果、`cause add(a,b)` 取拒绝原因），可作表达式或语句；`.res` / `.cause` 属性等价；`res r;` / `cause r;` 语句级转发 | `length = res IO::readInt();`、`ALL why = cause Calc::div(1,0);`、`r.res`、`bad.cause`；`res r;` 转发成功值、`cause r;` 转发拒绝原因 |
-| **拒绝传播** | 被拒的 Result 作为参数 → 请求随之被拒 | `MyCalc::add(1, bad)` → ref |
-| 控制流 | `if/else if/else`、`while`、`for(;;)`、`break`、`continue` | 条件真值：0/空串/被拒 = 假 |
-| **子流** | **IO** IOStream 通用流（默认存在）/ **CIO** IO 的 Console 实现（+ 预置分叉 Console）/ **FIO** IO 的文件实现 / **SIO** IO 的字符串实现 / **Com** Comstream 计算流。IO 聚合 CIO/FIO/SIO | `IO::println` `IO::getln` `IO::write` `IO::read` `FIO::readFile` `SIO::format` |
-| **流方法分类** | **文本流**：`println`/`print`（写文本）、`get`/`getln`（读文本：单字符/整行）；**字节流**：`write`（写原始字节）、`read`（读原始字节 0-255，EOF -1）。CIO/SIO 均实现（SIO 用内存字符串缓冲区作"文件"） | `CIO::getln()`、`SIO::read()`、`IO::write("A")` |
-| **Com 计算流** | 瞬时流的分支，处理各种瞬时计算：`abs/min/max/pow/sqrt/floor/ceil/round/sign/sin/cos/tan/log/exp` | `Com::abs(0-5).res`、`Com::pow(2, 10).res` |
-| **Timestream 计时流** | 同时拥有多个计时器；默认**第一个计时器归线程所有，不允许归零**，`Time::fork()` 分叉出的允许归零；`now/sleep/start/fork/elapsed/reset` | `Time::start()`（线程首计时器）；`ALL t = Time::fork(); Time::reset(t.res);` |
-| 裸函数调用 | `add(a, b)` — 全局搜索提供该方法的流 | `res add(a, b);`（spec 风格） |
-| 默认返回 | 无显式 res/ref → 默认 `ref(无)`，if 视为假 | `ALL x = f(); if (x) {...}` → 走 else |
-| 假设 | `need value/function/stream/Class ...;`（`need Stream`/`need Class` 可带 `{...}` body，原稿语法） | 未满足 → 拒绝运行 |
-| **变量修饰** | `const int x = 10;` → Constantstream（只读，重复声明/修改拒绝，方法内与**顶层**均可）；`int x = 10;` → 作用域流；`thread int x = 10;` → 线程变量（线程作用域） | `const int PI = 3;` 改 PI → 拒绝「常量不能修改」 |
-| 运算 | `+ - * / == != < > <= >=`、数字、字符串、变量；**复合赋值** `+= -= *= /= %=`（变量、`this::属性`、数组元素均可）；**自增自减** `i++` / `i--`；**数组下标** `a[i]` 读写 | `ALL y = x.res * 2 + 1;`、`this::n += 1;`、`for (int i = 0; i < n; i++) { a[i] = i; }` |
-| 基本类型 | `int` `float` `double` `string` `char`（字段：`int n;` 类型 对象） | |
-| **数组/Vector（Bio 类）** | Array/Vector 是 **Bio 代码实现的类**（非解释器内置），底层调 Solid 连续流；`new Array(n)`/`new Vector()` 创建；**数组字面量** `new type[n]` **类型通用**（基本类型与自定义类均可）；方法 `__init__/len/get/set/push/pop/clear/join` | `ALL a = new Array(3); a::set(0, 10); a::push(40); a::len().res; a::join("-").res`；`int[] a = new int[12];`、`ALL hs = new Hero[3];` |
-| **Solid 连续流** | 连续存储 + 自动分配 + **移动头指针**；`new/len/get/set/push/pop/read/peek/head/resetHead/clear/join` | `ALL s = Solid::new().res; Solid::read(s).res`（头指针前进） |
-| **Arrays 集合流** | 包含所有 Array/Vector 实例；new 一个 Array 默认插入（__init__ 里 `Arrays::add(this)`，Bio 代码可见）；`count/all/get/add/forget`；动态数组 `vector()` | `Arrays::count().res`、`ALL v = Arrays::vector(); v::push(10);` |
-| **二进制库流** | `Stream 名 & "文件.so" {}`；库导出函数自动成为流方法；`&func(...)` 全局二进制调用 | `Stream m & "libm.so" {}` → `m::sin(1.0)`；`&pow(2,10)` |
-| **Threads 线程** | `Threads::spawn("方法", 参数...)` / `yield` / `join` / `active` / `self` | 协作式用户线程（ucontext），线程执行裸方法调用 |
-| **Taskm 任务管理** | `Taskm::add/interval/run/stop/active` | 自动轮转所有任务直到完成，`interval(毫秒)` 设轮转间隔 |
-| **智能引用** | `&权限 跟随 真名`（权限 r/w/rw/m × 跟随 u/f/a）+ `Ref::read/write/move/target/perm`；引用变量声明 `<名字> &权限 跟随 [类型] [= 初值];`（原稿 realme 写法） | `&r u counter` 只读跟随程序级；`&r f x` 只读跟随方法；`&w a note` 写跟随作用域；`&m f x` 可移动 + `Ref::move(mv)` 取走目标；`count &w u int = 5;` |
-| **作用域链** | 方法小 Stream → 线程/主线程作用域(area) → 程序级(Unistream)，各自带记忆流 | 线程 a 层隔离；u 层程序级共享 |
+| Main program | `program main;` + `Main { void exec() { ... } }` | `Main { void exec() { CIO::println("Hi"); } }` |
+| Stream signature | `Stream S { int add(a int, b int); }` (args written `name type`) | `Stream Calc { int add(a int, b int); }` |
+| Stream fork | `S Impl { void m(...) { ... } }` | `Calc MyCalc { void add(a int, b int) { res a + b; } }` |
+| Class declaration | `Class C { void __init__() {...} int hp; int[] a; }` | classes are streams too; methods need no overwrite |
+| **Field declaration** | class/stream fields, methods and fields in any order, comma-separated: `int x, y;` / `int[] a;` / `string s;` / `type T; T n; T[] a;` (generic style). `new` materializes defaults (numeric 0 / string "" / array []) | `Class Vector { int x, y; }` → read/write via `v.x`, `v::x`, `this::x` |
+| **`new` instantiation** | `new Class(args...)` → fork class stream + auto `__init__(args...)`, returns an object (Result-wrapped); no special-casing — all classes (incl. builtin Array) share the same path | `ALL h = new Hero("TAK", 88);`, `ALL a = new Array(3);` → `h.hp`, `h::getName()` |
+| **Object model** | inside object methods `this` = the object; `Obj::new/get/set/forget/call/class`; object-stream calls `obj::method()`. A **bare-name assignment** that hits a declared field writes the instance property (`x = x;` ≡ `this::x = x;`); reads prefer params/locals | `Obj::set(this, "hp", 88);`, `ALL nm = h::getName();`, `__init__(x int) { x = x; }` |
+| **Streams/objects as args** | streams are first-class and can be method params with callable methods; smart-ref params `&perm follow name type` also supported | `void show(cio CIO) { cio::println(...); }`, `v::show(CIO)`; `void show(&w f io IO) { io::println(...); }`; `void add(&r f vec Vector) { this::x += vec::x; }` |
+| Request / respond / refuse | `res expr;` respond; `cause expr;` refuse (original syntax); compatible `ref cause ...;` | `res a + b;` or `cause "division by zero";` |
+| **Multiple return types** | methods declare `void/int/float/double/string/char` (optionally `[]`), uniform across signature/fork/Class/Main | `int add(a int, b int) { res a + b; }`, `string[] titles() { res "brave", "legend"; }` |
+| **`res` multi-values** | `res a, b, c;` comma-separated → returns an array | `res 1, 2, 3;` → `[1, 2, 3]`; single `res x;` stays scalar |
+| Request result | `ALL x = Stream::method(...);` | `ALL r = MyCalc::add(3, 4);` |
+| Result unwrap | **`res X` / `cause X` prefix operators** (original syntax) usable as expression or statement; `.res` / `.cause` properties are equivalent; `res r;` / `cause r;` forward at statement level | `length = res IO::readInt();`, `ALL why = cause Calc::div(1,0);`, `r.res`, `bad.cause` |
+| **Refusal propagation** | a refused Result passed as an argument refuses the enclosing request | `MyCalc::add(1, bad)` → refused |
+| Control flow | `if/else if/else`, `while`, `for(;;)`, `break`, `continue` | truthiness: 0 / "" / refused = false |
+| **Substreams** | **IO** IOStream (always present) / **CIO** console implementation (+ pre-forked Console) / **FIO** file implementation / **SIO** string implementation / **Com** computation stream. IO aggregates CIO/FIO/SIO | `IO::println` `IO::getln` `IO::write` `IO::read` `FIO::readFile` `SIO::format` |
+| **Stream methods by kind** | **Text streams**: `println`/`print` (write text), `get`/`getln` (read text: one char / one line); **byte streams**: `write` (raw bytes), `read` (raw byte 0-255, EOF -1). CIO/SIO implement both (SIO uses an in-memory string buffer as its "file") | `CIO::getln()`, `SIO::read()`, `IO::write("A")` |
+| **Com computation stream** | branch of transient streams for instant computations: `abs/min/max/pow/sqrt/floor/ceil/round/sign/sin/cos/tan/log/exp` | `Com::abs(0-5).res`, `Com::pow(2, 10).res` |
+| **Timestream** | hold several timers; the **first timer is owned by the thread and cannot be reset**, timers from `Time::fork()` can; `now/sleep/start/fork/elapsed/reset` | `Time::start()` (thread's first timer); `ALL t = Time::fork(); Time::reset(t.res);` |
+| Bare function calls | `add(a, b)` — search all streams for a provider | `res add(a, b);` (spec style) |
+| Default return | no explicit res/ref → default `ref(nothing)`, `if` treats it as false | `ALL x = f(); if (x) {...}` → else |
+| Assumptions | `need value/function/stream/Class ...;` (`need Stream`/`need Class` may carry `{...}` bodies) | unmet → refuses to run |
+| **Variable modifiers** | `const int x = 10;` → Constantstream (read-only; redeclare/assign refused; works inside methods and at top level); `int x = 10;` → scope stream; `thread int x = 10;` → thread variable (thread-scoped) | `const int PI = 3;` changing PI → refused "constant is read-only" |
+| Operators | `+ - * / == != < > <= >=`, numbers, strings, variables; **compound assignment** `+= -= *= /= %=` (variables, `this::props`, array elements); **`i++` / `i--`**; **array indexing** `a[i]` read/write | `ALL y = x.res * 2 + 1;`, `this::n += 1;`, `for (int i = 0; i < n; i++) { a[i] = i; }` |
+| Base types | `int` `float` `double` `string` `char` (field: `int n;` type name) | |
+| **Array/Vector (Bio classes)** | Array/Vector are **classes implemented in Bio code** (not interpreter builtins) over the Solid stream; `new Array(n)` / `new Vector()`; **array literals** `new type[n]` are type-generic (base types and custom classes); methods `__init__/len/get/set/push/pop/clear/join` | `ALL a = new Array(3); a::set(0, 10); a::push(40); a::len().res; a::join("-").res`; `int[] a = new int[12];`, `ALL hs = new Hero[3];` |
+| **Solid stream** | contiguous storage + auto-grow + **moving head pointer**; `new/len/get/set/push/pop/read/peek/head/resetHead/clear/join` | `ALL s = Solid::new().res; Solid::read(s).res` (head advances) |
+| **Arrays collection** | holds every Array/Vector instance; a `new Array` registers itself (`Arrays::add(this)` in `__init__`, visible in Bio code); `count/all/get/add/forget`; dynamic array `vector()` | `Arrays::count().res`, `ALL v = Arrays::vector(); v::push(10);` |
+| **Binary library streams** | `Stream name & "file.so" {}`; exported functions become stream methods automatically; `&func(...)` global binary call | `Stream m & "libm.so" {}` → `m::sin(1.0)`; `&pow(2,10)` |
+| **Threads** | `Threads::spawn("method", args...)` / `yield` / `join` / `active` / `self` | cooperative user threads (ucontext), threads run bare method calls |
+| **Taskm** | `Taskm::add/interval/run/stop/active` | auto round-robin of all tasks until done; `interval(ms)` sets the rotation interval |
+| **Smart references** | `&perm follow target-name` (perm r/w/rw/m × follow u/f/a) + `Ref::read/write/move/target/perm`; reference variable declarations `name &perm follow [type] [= init];` | `&r u counter` read-only program-level; `&r f x` read-only method-level; `&w a note` write scope-level; `&m f x` movable + `Ref::move(mv)` takes the target; `count &w u int = 5;` |
+| **Scope chain** | method mini-stream → thread/main-thread scope (area) → program level (Unistream), each with its own memory stream | thread `a`-layer isolation; `u`-layer shared program-wide |
 
-> 二进制函数调用约定：原型按 `double(*)(double,...)` 调用（最多 6 个参数，仅数值参数），字符串/指针参数暂不支持。
+> Binary-function calling convention: prototypes called as `double(*)(double,...)` (at most 6 args, numeric only); string/pointer arguments are not yet supported.
 >
-> Threads 为协作式线程：`yield()` 让出；线程内 `join` 未完成目标暂不支持。
+> Threads are cooperative: `yield()` yields; joining an unfinished target from inside a thread is not yet supported.
 
-## 内置演示
+## Built-in demos
 
 1. Hello World
-2. 流分叉 + res/ref 请求模型（回应、拒绝、缺方法）
-3. need 假设未满足 → 拒绝运行
-4. Class 声明 + 传感器流读数
-5. if / for / while 控制流（求和、阶乘、continue/break、else if、for(;;)）
-6. 子流 CIO/FIO/SIO + 裸调用 + ref cause + 默认 ref(无)
-7. Array 类（new Array + 对象方法）+ Threads 线程（阶乘线程 + 协作 countUp）
-8. Taskm 任务管理器（自动轮转求和/2^n）
-9. 智能引用 &权限 跟随 真名（r/w/rw × u/f/a）+ 线程作用域隔离
-10. 多返回类型（int/string/int[]）+ res 多值 + Class 方法
-11. new 语法分叉类流 + 自动 __init__ + this + 对象方法（Obj::call / h::getName）
-12. 流内部裸调用 + this::属性 + Arrays 集合/Vector
-13. IO 聚合 / Com 计算流 / 引用变量声明 / Ref::move / Time fork / res·cause 解包
+2. Stream fork + res/ref request model (responded, refused, missing method)
+3. Unmet `need` assumptions → refuses to run
+4. Class declaration + sensor stream readings
+5. `if` / `for` / `while` control flow (sum, factorial, continue/break, else if, for(;;))
+6. CIO/FIO/SIO substreams + bare calls + ref cause + default ref(nothing)
+7. Array class (`new Array` + object methods) + Threads (factorial thread + cooperative countUp)
+8. Taskm scheduler (round-robin sum/2^n)
+9. Smart refs `&perm follow name` (r/w/rw × u/f/a) + thread scope isolation
+10. Multiple return types (int/string/int[]) + `res` multi-values + Class methods
+11. `new` fork class stream + auto `__init__` + `this` + object methods (`Obj::call` / `h::getName`)
+12. In-stream bare calls + `this::` props + Arrays collection/Vector
+13. IO aggregate / Com computation stream / reference var decls / `Ref::move` / Time fork / res·cause unwrap
 
-## 未实现（后续再说）
+## Not yet implemented
 
-- `Threadstream`（进程流）/ `Areastream` 等作为显式流类型的声明语法（当前 area 仅作为隐式作用域层存在）
-- 编译模式目前是「源码嵌入 + 链接运行时」的自我包含可执行文件；真正的 AST→机器码 / 独立运行时还待后续
+- Declaring `Threadstream` (process streams) / `Areastream` as explicit stream types (currently `area` exists only as an implicit scope layer).
+- The compiler currently produces a "source embedded + runtime linked" self-contained executable; true AST→machine-code / standalone-runtime compilation is future work.
+
+## License
+
+[MIT](LICENSE) © 2026 BioLang contributors

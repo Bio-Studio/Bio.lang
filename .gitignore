@@ -1,15 +1,15 @@
-# 编译产物
+# Build artifacts
 bio
 libbio.a
 *.o
 *.generated.c
 
-# 旧单文件归档（源码已在 src/ 多模块）
+# Legacy single-file archive (source is now split under src/)
 biolang.c.mono
 
-# 本地 Claude 配置
+# Local Claude config
 .claude/
 
-# 系统/编辑器
+# System / editor
 *.swp
 .DS_Store
