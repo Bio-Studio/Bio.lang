@@ -370,18 +370,47 @@ static char *read_whole_file(const char *path) {
 static void print_usage(void) {
     printf("🧬 BioLang — interpret or compile .bio/.bl programs\n\n");
     printf("Usage:\n");
-    printf("  bio <file>              run (interpret) a program\n");
-    printf("  bio -r <file>           run (interpret) a program\n");
-    printf("  bio -b <file> [-o out]  compile to a standalone native executable\n");
-    printf("  bio --tokens <file>     dump tokens (debug)\n");
-    printf("  bio                      run built-in demos\n");
-    printf("  bio -h | --help          show this help\n");
+    printf("  bio <file>               run (interpret) a program\n");
+    printf("  bio -r <file>            run (interpret) a program\n");
+    printf("  bio -b <file> [-o out]   compile to a standalone native executable\n");
+    printf("  bio --tokens <file>      dump tokens (debug)\n");
+    printf("  bio init <name>          create a project skeleton (src/ utils/ package.toml)\n");
+    printf("  bio build [dir] [-o out] build a project (bundle needs, compile)\n");
+    printf("  bio run [dir]            run a project (bundle needs, interpret)\n");
+    printf("  bio install [dir]        install deps from package.toml\n");
+    printf("  bio destroy [dir]        remove build artifacts\n");
+    printf("  bio                       run built-in demos\n");
+    printf("  bio -h | --help           show this help\n");
+    printf("\n  env: BIOLANG_CONFIG → global config file (TOML, may contain repo=)\n");
 }
 
 int main(int argc, char **argv) {
     if (argc > 1 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
         print_usage();
         return 0;
+    }
+    /* ── 项目命令 ── */
+    if (argc > 1 && strcmp(argv[1], "init") == 0 && argc > 2)
+        return project_init(argv[2]);
+    if (argc > 1 && strcmp(argv[1], "build") == 0) {
+        const char *dir = ".";
+        const char *out = NULL;
+        if (argc > 2 && strcmp(argv[2], "-o") != 0) dir = argv[2];
+        if (argc > 3 && strcmp(argv[argc-2], "-o") == 0) out = argv[argc-1];
+        else if (argc > 2 && strcmp(argv[2], "-o") == 0 && argc > 3) { dir = "."; out = argv[3]; }
+        return project_build(dir, out);
+    }
+    if (argc > 1 && strcmp(argv[1], "run") == 0) {
+        const char *dir = argc > 2 ? argv[2] : ".";
+        return project_run(dir);
+    }
+    if (argc > 1 && strcmp(argv[1], "install") == 0) {
+        const char *dir = argc > 2 ? argv[2] : ".";
+        return project_install(dir);
+    }
+    if (argc > 1 && strcmp(argv[1], "destroy") == 0) {
+        const char *dir = argc > 2 ? argv[2] : ".";
+        return project_destroy(dir);
     }
     if (argc > 1 && strcmp(argv[1], "--tokens") == 0 && argc > 2) {
         char *buf = read_whole_file(argv[2]);

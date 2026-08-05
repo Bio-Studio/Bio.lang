@@ -186,6 +186,24 @@ const char *reject_reason(Value *v);
 void run_source(const char *src);
 int compile_program(const char *src, const char *outpath);   /* bio -b：源码嵌入编译 */
 Tok *tokenize(const char *src, int *ntok);
+
+/* ── 项目式编译运行（src/project.c）── */
+/* TOML 键值表（极简，src/toml.c） */
+typedef struct TomlPair { const char *key; const char *val; } TomlPair;
+typedef struct TomlTable { TomlPair *pairs; int n; } TomlTable;
+TomlTable *toml_parse_file(const char *path);         /* 顶层 + [dependencies] */
+const char *toml_get(TomlTable *t, const char *key);  /* 查顶层键 */
+const char *toml_dep(TomlTable *t, int idx, const char **name); /* 遍历依赖 */
+const char *toml_dep_field(TomlTable *t, const char *dep, const char *field); /* 依赖的 version/repo */
+/* 全局配置：环境变量 BIOLANG_CONFIG 指向全局配置文件（TOML，可含 repo/系统路径） */
+const char *global_repo(void);                        /* 从全局配置解析默认 repo */
+
+/* 项目命令 */
+int project_init(const char *name);                   /* bio init */
+int project_build(const char *dir, const char *out);  /* bio build */
+int project_run(const char *dir);                     /* bio run */
+int project_install(const char *dir);                 /* bio install */
+int project_destroy(const char *dir);                 /* bio destroy */
 int truthy(Value *v);
 Value *var_get(VarMap *m, const char *name);
 Value *var_get_layer(VarMap *m, const char *name);   /* 单层查找（引用用） */

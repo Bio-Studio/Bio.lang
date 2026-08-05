@@ -2,7 +2,7 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -O2 -Isrc
 # 运行时库（不含 main）：bio 解释器 + 编译驱动都链接它
-LIB     = src/arena.c src/lexer.c src/value.c src/builtin.c src/parser.c src/interp.c src/bts.c src/compile.c
+LIB     = src/arena.c src/lexer.c src/value.c src/builtin.c src/parser.c src/interp.c src/bts.c src/compile.c src/toml.c src/project.c
 BIN     = bio
 PREFIX  = $(HOME)/.local
 

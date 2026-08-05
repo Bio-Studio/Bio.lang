@@ -466,6 +466,100 @@ function activate(context) {
     });
   });
 
+  /* 项目根：当前工作区（含 package.toml）或活动文件所在目录向上找 */
+  function projectRoot() {
+    if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]) {
+      const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
+      if (require('fs').existsSync(require('path').join(root, 'package.toml'))) return root;
+    }
+    const doc = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
+    if (doc) {
+      let dir = path.dirname(doc.fileName);
+      for (let i = 0; i < 6; i++) {
+        if (require('fs').existsSync(path.join(dir, 'package.toml'))) return dir;
+        const up = path.dirname(dir);
+        if (up === dir) break;
+        dir = up;
+      }
+    }
+    return null;
+  }
+
+  function projCmd(cmd, args, successMsg, isRun) {
+    const dir = projectRoot();
+    if (!dir) { vscode.window.showWarningMessage('未找到项目（package.toml）'); return; }
+    const out = vscode.window.createOutputChannel('BioLang 项目');
+    out.show(true);
+    out.appendLine(`$ bio ${cmd} ${dir}${args ? ' ' + args : ''}`);
+    if (isRun) {
+      /* 项目运行：Webview 交互（stdin 输入） */
+      const panel = vscode.window.createWebviewPanel('biolangProjRun', `BioLang 项目运行`, vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
+      panel.webview.html = panelHtml('项目运行 (bio run)');
+      const child = spawn('bio', ['run', dir], { cwd: dir });
+      let killed = false;
+      child.stdout.on('data', d => panel.webview.postMessage({ type: 'out', text: d.toString() }));
+      child.stderr.on('data', d => panel.webview.postMessage({ type: 'err', text: d.toString() }));
+      child.on('error', e => panel.webview.postMessage({ type: 'err', text: '[bio] ' + e.message + '\n' }));
+      child.on('close', code => { if (!killed) panel.webview.postMessage({ type: 'done', code }); });
+      panel.webview.onDidReceiveMessage(msg => { if (msg.type === 'input' && child.stdin.writable) child.stdin.write(msg.text + '\n'); });
+      panel.onDidDispose(() => { killed = true; child.kill(); });
+      panel.webview.postMessage({ type: 'ready' });
+      return;
+    }
+    execFile('bio', [cmd, dir].concat(args ? args.split(' ') : []), { cwd: dir }, (err, stdout, stderr) => {
+      if (stdout) out.append(stdout);
+      if (stderr) out.append(stderr);
+      if (err) out.appendLine(`[bio ${cmd} 失败 退出码 ${err.code}]`);
+      else if (successMsg) out.appendLine(successMsg);
+    });
+  }
+
+  const projectInit = vscode.commands.registerCommand('biolang.projectInit', async () => {
+    const name = await vscode.window.showInputBox({ prompt: '项目名称', value: 'myapp' });
+    if (!name) return;
+    const out = vscode.window.createOutputChannel('BioLang 项目');
+    out.show(true);
+    const ws = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]
+      ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
+    execFile('bio', ['init', ws ? path.join(ws, name) : name], {}, (err, stdout, stderr) => {
+      if (stdout) out.append(stdout);
+      if (stderr) out.append(stderr);
+      if (err) out.appendLine(`[bio init 失败 退出码 ${err.code}]`);
+    });
+  });
+
+  const projectBuild = vscode.commands.registerCommand('biolang.projectBuild', () => {
+    const dir = projectRoot();
+    if (!dir) { vscode.window.showWarningMessage('未找到项目（package.toml）'); return; }
+    const out = vscode.window.createOutputChannel('BioLang 项目');
+    out.show(true);
+    out.appendLine(`$ bio build ${dir}`);
+    execFile('bio', ['build', dir, '-o', path.join(dir, 'app')], { cwd: dir }, (err, stdout, stderr) => {
+      if (stdout) out.append(stdout);
+      if (stderr) out.append(stderr);
+      if (err) out.appendLine(`[bio build 失败 退出码 ${err.code}]`);
+      else out.appendLine('✔ 项目编译成功');
+    });
+  });
+
+  const projectRun = vscode.commands.registerCommand('biolang.projectRun', () => projCmd('run', null, null, true));
+
+  const projectInstall = vscode.commands.registerCommand('biolang.projectInstall', () => projCmd('install', null, '✔ 依赖安装完成'));
+
+  const projectDestroy = vscode.commands.registerCommand('biolang.projectDestroy', async () => {
+    const dir = projectRoot();
+    if (!dir) { vscode.window.showWarningMessage('未找到项目（package.toml）'); return; }
+    const yes = await vscode.window.showWarningMessage(`销毁 ${path.basename(dir)} 的构建产物？`, { modal: true }, '销毁');
+    if (!yes) return;
+    const out = vscode.window.createOutputChannel('BioLang 项目');
+    out.show(true);
+    execFile('bio', ['destroy', dir], { cwd: dir }, (err, stdout, stderr) => {
+      if (stdout) out.append(stdout);
+      if (stderr) out.append(stderr);
+      if (err) out.appendLine(`[bio destroy 失败 退出码 ${err.code}]`);
+    });
+  });
+
   const runDemo = vscode.commands.registerCommand('biolang.runDemo', () => {
     const out = vscode.window.createOutputChannel('BioLang');
     out.show(true);
@@ -477,7 +571,7 @@ function activate(context) {
     });
   });
 
-  context.subscriptions.push(provider, runFile, compileFile, runDemo);
+  context.subscriptions.push(provider, runFile, compileFile, projectInit, projectBuild, projectRun, projectInstall, projectDestroy, runDemo);
 }
 
 function deactivate() {}

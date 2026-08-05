@@ -1,8 +1,7 @@
 program main;
 
 Main {
+
     void exec() {
-        string alo World!";
-        SIO::
     }
 }

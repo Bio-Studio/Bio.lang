@@ -135,6 +135,20 @@ Result *stream_request(Interp *in, Stream *s, const char *method, Value **args, 
     if (s->builtin) return builtin_request(s->builtin, method, args, nargs);
     Method *m = method_find(s, method);
     if (!m) {
+        /* 签名流方法缺失 → 优先回退到该签名流的实现流（D_FORK sig == s->name），
+         * 找不到再从任意用户流里找（避免误中内置 Vector::get 等） */
+        for (Decl *d = in->decls; d; d = d->next) {
+            if (d->kind == D_FORK && strcmp(d->sig, s->name) == 0) {
+                Stream *impl = stream_find(in, d->name);
+                if (impl && (m = method_find(impl, method))) { s = impl; break; }
+            }
+        }
+        if (!m) {
+            for (Stream *t = in->streams; t; t = t->next)
+                if (t != s && !t->builtin && method_find(t, method)) { s = t; m = method_find(t, method); break; }
+        }
+    }
+    if (!m) {
         char buf[256];
         snprintf(buf, sizeof buf, "stream %s refuses: no method %s", s->name, method);
         return mk_ref(astrdup(buf));

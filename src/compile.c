@@ -62,11 +62,11 @@ int compile_program(const char *src, const char *outpath) {
         "gcc -O2 -I\"%s/src\" -o \"%s\" \"%s\" "
         "\"%s/src/arena.c\" \"%s/src/lexer.c\" \"%s/src/value.c\" "
         "\"%s/src/builtin.c\" \"%s/src/parser.c\" \"%s/src/interp.c\" "
-        "\"%s/src/bts.c\" \"%s/src/compile.c\" -lm",
+        "\"%s/src/bts.c\" \"%s/src/compile.c\" \"%s/src/toml.c\" \"%s/src/project.c\" -lm",
         BIO_HOME, outpath, tmp,
         BIO_HOME, BIO_HOME, BIO_HOME,
         BIO_HOME, BIO_HOME, BIO_HOME,
-        BIO_HOME, BIO_HOME);
+        BIO_HOME, BIO_HOME, BIO_HOME, BIO_HOME);
     int rc = system(cmd);
     remove(tmp);
     if (rc != 0) {

@@ -16,6 +16,31 @@ bio --tokens x.bl # 查看词法分析结果（调试用）
 bio -h            # 帮助
 ```
 
+### 项目式编译运行
+
+项目结构：`package.toml`（清单）+ `src/`（源码，`main.bio` 入口）+ `utils/`（库）+ `.biolang/deps/`（依赖）。
+
+```bash
+bio init <name>         # 创建项目骨架
+bio build [dir] [-o 输出] # 项目编译：按需捆绑 need + 校验 + 编译
+bio run [dir]           # 项目运行（解释）
+bio install [dir]       # 安装 package.toml 依赖
+bio destroy [dir]       # 删除构建产物（.biolang/、app）
+```
+
+- **need 捆绑**：从 `main` 入口开始按需收集 `need` 的提供者（`src/` + `utils/` + `.biolang/deps/`），递归直到闭包稳定；**任何 need 无提供者 → 直接报错**。签名流名调用自动回退实现流（`Calc::add` → 实现流）。
+- **package.toml**：标准字段 `name`/`version`/`repo` + `[dependencies]`（`name = { version=.., repo=.. }`，repo 可选）。
+- **repo 解析顺序**：依赖自身 `repo` → 环境变量 `BIOLANG_CONFIG` 指向的全局配置文件里的 `repo` → 系统默认 `~/.biolang/config.toml`。
+- **依赖拉取**：全支持 git 仓库 / HTTP 下载 / 本地路径。
+
+示例 package.toml：
+```toml
+name = "myapp"
+version = "0.1.0"
+[dependencies]
+libfoo = { version = "1.0.0", repo = "/path/to/libfoo" }   # 或 git/http 地址
+```
+
 ### 编译模式（`-b`）
 
 `bio -b 程序.bio` 把程序编译成**自包含的原生可执行文件**（源码嵌入 + 链接解释器运行时 `libbio.a`），运行时不再需要 `bio` 或源码。默认输出名 = 源文件去掉扩展名（`example.bio` → `example`），可用 `-o` 指定。
