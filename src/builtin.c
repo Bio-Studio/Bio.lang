@@ -46,7 +46,12 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "read") == 0 || strcmp(method, "readln") == 0 ||
         strcmp(method, "readInt") == 0 || strcmp(method, "readNumber") == 0) {
         char buf[512];
-        if (nargs > 0) print_value(args[0]);
+        if (nargs > 0) {
+            /* 提示参数：成功 Result 自动解包显示（res(x) → x） */
+            if (args[0]->kind == V_RES && args[0]->res && !args[0]->res->ref)
+                print_value(args[0]->res->res);
+            else print_value(args[0]);
+        }
         if (!fgets(buf, sizeof buf, stdin)) buf[0] = 0;
         size_t len = strlen(buf);
         while (len && (buf[len-1] == '\n' || buf[len-1] == '\r')) buf[--len] = 0;

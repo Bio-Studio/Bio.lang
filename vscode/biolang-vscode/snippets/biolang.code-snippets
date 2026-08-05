@@ -97,14 +97,28 @@
     "body": [
       "res ${1:value};"
     ],
-    "description": "回应请求结果"
+    "description": "回应请求结果；res X 也是前缀提取运算符（取 ALL 的结果）"
   },
   "BioLang 拒绝": {
     "prefix": "cause",
     "body": [
       "cause ${1:拒绝原因};"
     ],
-    "description": "拒绝请求（原稿语法：cause <表达式>;）"
+    "description": "拒绝请求（原稿语法：cause <表达式>;）；cause X 也是前缀提取运算符（取 ALL 的拒绝原因）"
+  },
+  "BioLang 提取结果": {
+    "prefix": "resop",
+    "body": [
+      "res ${1:request}"
+    ],
+    "description": "res X 前缀提取：X 的回应值（如 res IO::readInt()）"
+  },
+  "BioLang 提取原因": {
+    "prefix": "causeop",
+    "body": [
+      "cause ${1:request}"
+    ],
+    "description": "cause X 前缀提取：X 的拒绝原因（如 cause Calc::div(1,0)）"
   },
   "BioLang 输出": {
     "prefix": "println",

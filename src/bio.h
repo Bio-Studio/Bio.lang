@@ -50,8 +50,8 @@ struct VarMap {
 typedef struct { Result *ret; int brk; int cont; } Flow;
 
 typedef enum {
-    N_NUM, N_STR, N_VAR, N_CALL, N_PROP, N_BINOP,
-    N_ASSIGN, N_CALLSTMT, N_RET, N_BINCALL, N_REF, N_REALME,
+    N_NUM, N_STR, N_VAR, N_CALL, N_PROP, N_BINOP, N_INDEX,
+    N_ASSIGN, N_CALLSTMT, N_RET, N_BINCALL, N_REF, N_REALME, N_UNWRAP,
     N_IF, N_WHILE, N_FOR, N_BREAK, N_CONTINUE
 } NodeKind;
 
@@ -60,8 +60,8 @@ struct Node {
     double num;
     const char *str;          /* N_STR */
     const char *name;         /* N_VAR / N_ASSIGN 变量名 / N_PROP 属性名 */
-    const char *op;           /* N_BINOP 运算符 / N_ASSIGN 赋值运算符（"=" "+=" "-=" 等） */
-    Node *l, *r;              /* N_BINOP / N_PROP(base) */
+    const char *op;           /* N_BINOP 运算符 / N_ASSIGN 赋值运算符 / N_UNWRAP 提取("res"/"cause") */
+    Node *l, *r;              /* N_BINOP / N_PROP(base) / N_INDEX(base,idx) / N_UNWRAP(目标) */
     const char *qual;         /* N_CALL: 流名 */
     const char *mname;        /* N_CALL: 方法名 */
     Node **args; int nargs;   /* N_CALL */

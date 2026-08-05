@@ -204,6 +204,43 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
         }
         case N_REF:
             return mk_refobj(e->ref_perm, e->ref_follow, e->ref_name);
+        case N_UNWRAP: {
+            /* res X 取结果 / cause X 取拒绝原因（原稿前缀提取运算符） */
+            Value *v = eval_expr(in, e->l, scope);
+            int want_cause = strcmp(e->op, "cause") == 0;
+            if (is_rejected(v)) {
+                if (want_cause) return mk_str(reject_reason(v));   /* 被拒 → 拒绝原因 */
+                return v;                                            /* res 被拒值 → 拒绝传播 */
+            }
+            if (v->kind == V_RES && v->res) {
+                if (want_cause) {
+                    if (v->res->ref) return mk_str(v->res->ref);
+                    return mk_str("(无拒绝原因)");
+                }
+                if (v->res->ref) return v;                          /* 拒绝传播 */
+                return v->res->res;
+            }
+            /* 非 Result：res 即自身，cause 为无 */
+            if (want_cause) return mk_str("(无拒绝原因)");
+            return v;
+        }
+        case N_INDEX: {
+            /* 数组下标读取: a[i]（Array 实例底层是 Solid 连续流） */
+            Value *base = eval_expr(in, e->l, scope);
+            if (base->kind == V_RES && base->res && !base->res->ref && base->res->res)
+                base = base->res->res;
+            Value *data = base && (base->kind == V_OBJ || base->kind == V_ARR) && base->obj_fields
+                ? var_get_layer(base->obj_fields, "data") : NULL;
+            if (data && data->kind == V_ARR) {
+                Value *iv = eval_expr(in, e->r, scope);
+                if (iv->kind == V_RES && iv->res && !iv->res->ref) iv = iv->res->res;
+                if (iv->kind != V_NUM) return mk_refval("拒绝：数组索引需要数值");
+                int i = (int)iv->num;
+                if (i < 0 || data->head + i >= data->len) return mk_refval("拒绝：数组索引越界");
+                return data->items[data->head + i];
+            }
+            return mk_refval("拒绝：无法下标访问（不是数组）");
+        }
         case N_BINCALL: {
             Value **vals = aalloc(sizeof(Value *) * 64);
             int nvals = 0;
@@ -383,6 +420,14 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                         base = base->res->res;
                     if (base->kind == V_OBJ || (base->kind == V_ARR && base->obj_fields))
                         old = var_get_layer(base->obj_fields, st->target->name);
+                } else if (st->target && st->target->kind == N_INDEX) {
+                    /* a[i] += v：读数组元素旧值 */
+                    Node *old_idx = aalloc(sizeof(Node));
+                    old_idx->kind = N_INDEX;
+                    old_idx->l = st->target->l; old_idx->r = st->target->r;
+                    Value *ov = eval_expr(in, old_idx, scope);
+                    if (is_rejected(ov)) { fl->ret = mk_ref(reject_reason(ov)); break; }
+                    old = ov;
                 } else {
                     old = var_get(scope, st->name);
                 }
@@ -415,6 +460,25 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                     break;
                 }
                 fl->ret = mk_ref("拒绝：属性赋值目标不是对象");
+                break;
+            }
+            if (st->target && st->target->kind == N_INDEX) {
+                /* 数组下标赋值: a[i] = v → 写 Array 底层 Solid 连续流 */
+                Value *base = eval_expr(in, st->target->l, scope);
+                if (base->kind == V_RES && base->res && !base->res->ref && base->res->res)
+                    base = base->res->res;
+                Value *data = base && (base->kind == V_OBJ || base->kind == V_ARR) && base->obj_fields
+                    ? var_get_layer(base->obj_fields, "data") : NULL;
+                if (data && data->kind == V_ARR) {
+                    Value *iv = eval_expr(in, st->target->r, scope);
+                    if (iv->kind == V_RES && iv->res && !iv->res->ref) iv = iv->res->res;
+                    if (iv->kind != V_NUM) { fl->ret = mk_ref("拒绝：数组索引需要数值"); break; }
+                    int i = (int)iv->num;
+                    if (i < 0 || data->head + i >= data->len) { fl->ret = mk_ref("拒绝：数组索引越界"); break; }
+                    data->items[data->head + i] = v;
+                    break;
+                }
+                fl->ret = mk_ref("拒绝：数组下标赋值目标不是数组");
                 break;
             }
             if (st->name && var_get_layer(&in->consts, st->name)) {
@@ -457,6 +521,8 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                     /* cause result; 解包：被回应值是被拒 Result → 转发其拒绝原因 */
                     if (v->kind == V_RES && v->res && v->res->ref)
                         fl->ret = mk_ref(v->res->ref);
+                    else if (v->kind == V_RES && v->res && !v->res->ref)
+                        fl->ret = mk_ref("(无拒绝原因)");
                     else
                         fl->ret = mk_ref(v->kind == V_STR ? v->str : "拒绝");
                 }

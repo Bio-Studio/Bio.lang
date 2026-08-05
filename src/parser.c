@@ -85,6 +85,13 @@ Node *parse_primary(Parser *p) {
         }
         expect_op(p, ")");
     }
+    else if (t->kind == T_KW && (strcmp(t->text, "res") == 0 || strcmp(t->text, "cause") == 0)) {
+        /* res X / cause X —— 前缀提取运算符（原稿：res add(a,b) 取结果，cause add(a,b) 取拒绝原因） */
+        Node *u = mk_node(N_UNWRAP);
+        u->op = t->text;          /* "res" / "cause" */
+        u->l = parse_primary(p);  /* 目标：调用/变量/字面量等 */
+        e = u;
+    }
     else if (t->kind == T_ID) {
         if (is_op(p, "::")) {
             /* qual::name(...) 调用 或 qual::name 属性访问（this::hp） */
@@ -111,6 +118,15 @@ Node *parse_primary(Parser *p) {
         } else if (is_op(p, "(")) {
             /* 裸函数调用表达式: add(a, b) */
             e = parse_call_plain(p, t->text);
+        } else if (is_op(p, "[")) {
+            /* 数组下标读取: a[i] */
+            Node *ix = mk_node(N_INDEX);
+            Node *base = mk_node(N_VAR); base->name = t->text;
+            next(p); /* [ */
+            Node *idx = parse_expr(p);
+            expect_op(p, "]");
+            ix->l = base; ix->r = idx;
+            e = ix;
         } else {
             e = mk_node(N_VAR); e->name = t->text;
         }
@@ -378,7 +394,7 @@ Node *parse_stmt(Parser *p) {
             expect_op(p, ";");
             return n;
         }
-        /* 数组类型变量声明: int[] a = expr; / int[] a; */
+        /* 数组类型变量声明: int[] a = expr; / int[] a;  （须先于数组下标判断） */
         if (p->i + 2 < p->n && p->t[p->i].kind == T_ID && is_type_name(p->t[p->i].text) &&
             p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "[") == 0 &&
             p->t[p->i + 2].kind == T_OP && strcmp(p->t[p->i + 2].text, "]") == 0) {
@@ -389,6 +405,49 @@ Node *parse_stmt(Parser *p) {
                 next(p);
                 n->expr = parse_expr(p);
             }
+            expect_op(p, ";");
+            return n;
+        }
+        /* 自增自减: i++; / i--;  （转为 i = i + 1; / i = i - 1;） */
+        if (p->i + 1 < p->n && p->t[p->i + 1].kind == T_OP &&
+            (strcmp(p->t[p->i + 1].text, "++") == 0 || strcmp(p->t[p->i + 1].text, "--") == 0)) {
+            const char *vn = t->text;              /* 变量名 = 当前 token（i） */
+            const char *inc = p->t[p->i + 1].text; /* ++ / --（下一个 token） */
+            next(p); next(p);                      /* 消费 i 和 ++ */
+            Node *n = mk_node(N_ASSIGN);
+            n->name = vn;
+            n->op = "=";
+            Node *b = mk_node(N_BINOP);
+            b->op = strcmp(inc, "++") == 0 ? "+" : "-";
+            Node *lv = mk_node(N_VAR); lv->name = vn;
+            Node *one = mk_node(N_NUM); one->num = 1;
+            b->l = lv; b->r = one;
+            n->expr = b;
+            if (!is_op(p, ";")) return n;   /* for 更新处 i++) 允许无分号 */
+            next(p);
+            return n;
+        }
+        /* 数组下标赋值: a[i] = v; / a[i] += v; */
+        if (p->i + 1 < p->n && p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "[") == 0) {
+            const char *arr = next(p)->text;         /* 数组名 */
+            next(p);                                 /* [ */
+            Node *idx = parse_expr(p);
+            expect_op(p, "]");
+            Node *tgt = mk_node(N_INDEX);
+            Node *base = mk_node(N_VAR); base->name = arr;
+            tgt->l = base; tgt->r = idx;
+            if (is_op(p, "=") || is_op(p, "+=") || is_op(p, "-=") ||
+                is_op(p, "*=") || is_op(p, "/=") || is_op(p, "%=")) {
+                Node *n = mk_node(N_ASSIGN);
+                n->op = next(p)->text;
+                n->target = tgt;
+                n->expr = parse_expr(p);
+                expect_op(p, ";");
+                return n;
+            }
+            /* 仅读取（无副作用） */
+            Node *n = mk_node(N_CALLSTMT);
+            n->l = tgt;
             expect_op(p, ";");
             return n;
         }
