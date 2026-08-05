@@ -1,5 +1,5 @@
 {
-  "BioLang 主程序骨架": {
+  "BioLang main skeleton": {
     "prefix": "main",
     "body": [
       "program main;",
@@ -11,9 +11,9 @@
       "}",
       ""
     ],
-    "description": "主程序流骨架"
+    "description": "Main program stream skeleton"
   },
-  "BioLang 流签名": {
+  "BioLang stream signature": {
     "prefix": "stream",
     "body": [
       "Stream ${1:Name} {",
@@ -21,9 +21,9 @@
       "}",
       ""
     ],
-    "description": "流签名声明（参数写法：名称 类型）"
+    "description": "Stream signature declaration (args written 'name type')"
   },
-  "BioLang 流分叉": {
+  "BioLang stream fork": {
     "prefix": "fork",
     "body": [
       "${1:Signature} ${2:Impl} {",
@@ -33,9 +33,9 @@
       "}",
       ""
     ],
-    "description": "从签名流分叉出实现"
+    "description": "Fork an implementation from a signature stream"
   },
-  "BioLang 类声明": {
+  "BioLang class declaration": {
     "prefix": "class",
     "body": [
       "Class ${1:Name} {",
@@ -46,166 +46,166 @@
       "}",
       ""
     ],
-    "description": "类（本质也是流，方法不需要 overwrite）"
+    "description": "Class (essentially a stream; methods need no overwrite)"
   },
-  "BioLang 字段声明": {
+  "BioLang field declaration": {
     "prefix": "field",
     "body": [
       "${1|int,float,double,string,char,type|} ${2:x}${3:, ${4:y}};"
     ],
-    "description": "字段声明（逗号分隔多字段；type 为泛型类型）"
+    "description": "Field declaration (comma-separated; type is a generic type)"
   },
-  "BioLang 数组字段": {
+  "BioLang array field": {
     "prefix": "arrfield",
     "body": [
       "${1|int,float,double,string,char|}[] ${2:a};"
     ],
-    "description": "数组字段声明（int[] a;）"
+    "description": "Array field declaration (int[] a;)"
   },
-  "BioLang 泛型类型": {
+  "BioLang generic type": {
     "prefix": "generic",
     "body": [
       "type ${1:T};",
       "${1:T} ${2:val};",
       "${1:T}[] ${3:list};"
     ],
-    "description": "泛型类型（type T; T val; T[] list;）"
+    "description": "Generic type (type T; T val; T[] list;)"
   },
-  "BioLang 属性赋值": {
+  "BioLang this:: attribute assignment": {
     "prefix": "thisattr",
     "body": [
       "this::${1:attr} = ${2:value};"
     ],
-    "description": "this:: 属性赋值（写对象/流字段）"
+    "description": "this:: attribute assignment (writes object/stream field)"
   },
-  "BioLang 属性读取": {
+  "BioLang this:: attribute read": {
     "prefix": "thisget",
     "body": [
       "${1:this::attr}.res"
     ],
-    "description": "this:: 属性读取"
+    "description": "this:: attribute read"
   },
-  "BioLang 请求调用": {
+  "BioLang request call": {
     "prefix": "call",
     "body": [
       "ALL ${1:result} = ${2:Stream}::${3:method}($4);"
     ],
-    "description": "发起请求并捕获结果"
+    "description": "Make a request and capture the result"
   },
-  "BioLang 回应": {
+  "BioLang respond (res)": {
     "prefix": "res",
     "body": [
       "res ${1:value};"
     ],
-    "description": "回应请求结果；res X 也是前缀提取运算符（取 ALL 的结果）"
+    "description": "Respond with a result; res X is also the prefix unwrap operator (takes an ALL's value)"
   },
-  "BioLang 拒绝": {
+  "BioLang refuse (cause)": {
     "prefix": "cause",
     "body": [
-      "cause ${1:拒绝原因};"
+      "cause ${1:reason};"
     ],
-    "description": "拒绝请求（原稿语法：cause <表达式>;）；cause X 也是前缀提取运算符（取 ALL 的拒绝原因）"
+    "description": "Refuse a request (original syntax: cause <expr>;); cause X is also the prefix unwrap operator (takes an ALL's refusal reason)"
   },
-  "BioLang 提取结果": {
+  "BioLang unwrap res": {
     "prefix": "resop",
     "body": [
       "res ${1:request}"
     ],
-    "description": "res X 前缀提取：X 的回应值（如 res IO::readInt()）"
+    "description": "res X prefix unwrap: X's responded value (e.g. res IO::readInt())"
   },
-  "BioLang 提取原因": {
+  "BioLang unwrap cause": {
     "prefix": "causeop",
     "body": [
       "cause ${1:request}"
     ],
-    "description": "cause X 前缀提取：X 的拒绝原因（如 cause Calc::div(1,0)）"
+    "description": "cause X prefix unwrap: X's refusal reason (e.g. cause Calc::div(1,0))"
   },
-  "BioLang 输出": {
+  "BioLang print line": {
     "prefix": "println",
     "body": [
       "CIO::println(${1:message});"
     ],
-    "description": "CIO 控制台输出（换行）"
+    "description": "CIO console output (newline)"
   },
-  "BioLang 假设": {
+  "BioLang assumption (need)": {
     "prefix": "need",
     "body": [
       "need ${1|value,function,stream,Class|} ${2:name};"
     ],
-    "description": "声明假设（value/function/stream/Class），未满足 → 拒绝运行"
+    "description": "Declare an assumption (value/function/stream/Class); unmet → refuses to run"
   },
-  "BioLang 类实例化": {
+  "BioLang new (instantiate class)": {
     "prefix": "new",
     "body": [
       "ALL ${1:obj} = new ${2:Class}(${3:args});"
     ],
-    "description": "new 语法：分叉类流 + 自动调用 __init__（等价 Obj::new）"
+    "description": "new syntax: fork class stream + auto __init__ (equivalent to Obj::new)"
   },
-  "BioLang 智能引用": {
+  "BioLang smart reference": {
     "prefix": "sref",
     "body": [
       "ALL ${1:r} = &${2|r,w,rw,m|} ${3|u,f,a|} ${4:name};"
     ],
-    "description": "智能引用：&权限 跟随 真名（r/w/rw/m × u/f/a），配合 Ref::read/write/move"
+    "description": "Smart reference: &perm follow name (r/w/rw/m × u/f/a), with Ref::read/write/move"
   },
-  "BioLang 引用变量声明": {
+  "BioLang reference variable declaration": {
     "prefix": "realme",
     "body": [
       "${1:name} &${2|r,w,rw,m|} ${3|u,f,a|} ${4:int}${5: = ${6:value}};"
     ],
-    "description": "引用变量声明（原稿 realme 写法）：名字 &权限 跟随 [类型] [= 初值]"
+    "description": "Reference variable declaration (original realme syntax): name &perm follow [type] [= init]"
   },
-  "BioLang 二进制库流": {
+  "BioLang binary library stream": {
     "prefix": "bins",
     "body": [
       "Stream ${1:Name} & \"${2:lib.so}\" {",
       "}",
       ""
     ],
-    "description": "二进制库流：dlopen 加载，库导出符号自动成为流方法"
+    "description": "Binary library stream: dlopen-loaded; exported symbols become stream methods"
   },
-  "BioLang 二进制调用": {
+  "BioLang binary call": {
     "prefix": "bincall",
     "body": [
       "ALL ${1:r} = &${2:func}(${3:args});"
     ],
-    "description": "全局调用已加载二进制库的导出符号"
+    "description": "Call an exported symbol of a loaded binary library"
   },
-  "BioLang 线程": {
+  "BioLang thread (spawn)": {
     "prefix": "spawn",
     "body": [
       "ALL ${1:t} = Threads::spawn(\"${2:method}\", ${3:args}).res;"
     ],
-    "description": "创建协作式线程（Threads::spawn/yield/join/active/self）"
+    "description": "Create a cooperative thread (Threads::spawn/yield/join/active/self)"
   },
-  "BioLang 任务管理器": {
+  "BioLang task manager": {
     "prefix": "taskm",
     "body": [
       "Taskm::interval(${1:1});",
       "ALL ${2:t} = Taskm::add(\"${3:job}\", ${4:args}).res;",
       "Taskm::run();"
     ],
-    "description": "任务管理器：自动轮转线程直到完成"
+    "description": "Task manager: round-robins threads until done"
   },
   "BioLang if": {
     "prefix": "if",
     "body": [
-      "if (${1:条件}) {",
+      "if (${1:condition}) {",
       "\t$2",
       "} else {",
       "\t$3",
       "}"
     ],
-    "description": "条件分支"
+    "description": "Conditional branch"
   },
   "BioLang while": {
     "prefix": "while",
     "body": [
-      "while (${1:条件}) {",
+      "while (${1:condition}) {",
       "\t$2",
       "}"
     ],
-    "description": "循环"
+    "description": "Loop"
   },
   "BioLang for": {
     "prefix": "for",
@@ -214,20 +214,20 @@
       "\t$5",
       "}"
     ],
-    "description": "C 风格 for 循环"
+    "description": "C-style for loop"
   },
-  "BioLang 常量声明": {
+  "BioLang const declaration": {
     "prefix": "const",
     "body": [
       "const ${1:int} ${2:x} = ${3:10};"
     ],
-    "description": "常量变量（原稿：const → Constantstream，只读）"
+    "description": "Constant variable (original spec: const → Constantstream, read-only)"
   },
-  "BioLang 线程变量": {
+  "BioLang thread variable": {
     "prefix": "thread",
     "body": [
       "thread ${1:int} ${2:x} = ${3:10};"
     ],
-    "description": "线程变量（原稿：thread → 线程作用域）"
+    "description": "Thread variable (original spec: thread → thread scope)"
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "biolang",
   "displayName": "BioLang",
-  "description": "BioLang 语言支持：语法高亮、代码片段、补全、运行命令（bio CLI）",
+  "description": "BioLang language support: syntax highlighting, snippets, completions, run commands (bio CLI)",
   "version": "0.15.0",
   "publisher": "bio",
   "license": "MIT",
@@ -43,35 +43,35 @@
     "commands": [
       {
         "command": "biolang.runFile",
-        "title": "BioLang: 运行当前文件 (bio)"
+        "title": "BioLang: Run current file (bio)"
       },
       {
         "command": "biolang.compileFile",
-        "title": "BioLang: 编译当前文件 (bio -b)"
+        "title": "BioLang: Compile current file (bio -b)"
       },
       {
         "command": "biolang.projectInit",
-        "title": "BioLang: 创建项目"
+        "title": "BioLang: Create project"
       },
       {
         "command": "biolang.projectBuild",
-        "title": "BioLang: 编译项目"
+        "title": "BioLang: Build project"
       },
       {
         "command": "biolang.projectRun",
-        "title": "BioLang: 运行项目"
+        "title": "BioLang: Run project"
       },
       {
         "command": "biolang.projectInstall",
-        "title": "BioLang: 安装项目依赖"
+        "title": "BioLang: Install project dependencies"
       },
       {
         "command": "biolang.projectDestroy",
-        "title": "BioLang: 销毁项目构建产物"
+        "title": "BioLang: Destroy project build artifacts"
       },
       {
         "command": "biolang.runDemo",
-        "title": "BioLang: 运行内置演示"
+        "title": "BioLang: Run built-in demos"
       }
     ],
     "menus": {
