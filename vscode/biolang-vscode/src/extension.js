@@ -250,15 +250,34 @@ function activate(context) {
         }
       }
 
-      // 已输入 `对象.` → 提示请求结果属性 + 类字段（v.x / r.res / r.ref）
+      // 已输入 `对象.` → 提示请求结果属性 + 类字段（v.x / r.res / r.cause）
       const dot = before.match(/([A-Za-z_]\w*)\.$/);
       if (dot) {
         items.push(fieldItem('res', '请求结果：值'));
-        items.push(fieldItem('ref', '请求结果：拒绝原因'));
+        items.push(fieldItem('cause', '请求结果：拒绝原因'));
         const { map } = parseStreams(text);
         const seen = new Set();
         for (const { fields } of map.values())
           for (const n of fields) if (!seen.has(n)) { seen.add(n); items.push(fieldItem(n, '类字段（对象属性）')); }
+        return items;
+      }
+
+      // 已输入 `new ` → 提示类名 + 数组类型（new int[n]）
+      if (before.match(/new\s+$/)) {
+        const { known } = parseStreams(text);
+        const names = new Set([...BUILTIN_STREAMS, ...known]);
+        for (const n of names) {
+          const item = new vscode.CompletionItem(n, vscode.CompletionItemKind.Class);
+          item.insertText = new vscode.SnippetString(`${n}($0)`);
+          item.detail = '类实例化';
+          items.push(item);
+        }
+        for (const t of ['int', 'float', 'double', 'string', 'char']) {
+          const item = new vscode.CompletionItem(t, vscode.CompletionItemKind.Struct);
+          item.insertText = new vscode.SnippetString(t + '[$1:n]');
+          item.detail = '数组字面量 new int[n]';
+          items.push(item);
+        }
         return items;
       }
 
@@ -287,7 +306,7 @@ function activate(context) {
       }
       return items;
     }
-  }, ':', '&', '.');
+  }, ':', '&', '.', ' ');
 
   /* ---------- 运行命令 ---------- */
   const runFile = vscode.commands.registerCommand('biolang.runFile', async () => {

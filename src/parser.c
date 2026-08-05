@@ -54,6 +54,22 @@ Node *parse_primary(Parser *p) {
     if (t->kind == T_NUM) { e = mk_node(N_NUM); e->num = t->num; }
     else if (t->kind == T_STR) { e = mk_node(N_STR); e->str = t->text; }
     else if (t->kind == T_KW && strcmp(t->text, "new") == 0) {
+        /* new int[12] → 数组字面量：Obj::new("Array", n) */
+        if (peek(p)->kind == T_ID && is_type_name(peek(p)->text) &&
+            p->i + 1 < p->n && p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "[") == 0) {
+            next(p);                      /* 类型 int */
+            next(p);                      /* [ */
+            Node *sz = parse_expr(p);     /* 长度 */
+            expect_op(p, "]");
+            e = mk_node(N_CALL);
+            e->qual = "Obj";
+            e->mname = "new";
+            e->args = aalloc(sizeof(Node *) * 64); e->nargs = 0;
+            Node *cn = mk_node(N_STR); cn->str = "Array";
+            e->args[e->nargs++] = cn;
+            e->args[e->nargs++] = sz;
+            goto prop_chain;
+        }
         /* new Class(args...) → Obj::new("Class", args...)：分叉类流 + 自动调 __init__ */
         const char *cls = expect_id(p);
         expect_op(p, "(");
@@ -136,6 +152,7 @@ Node *parse_primary(Parser *p) {
         return mk_node(N_NUM);
     }
     /* 属性访问链: .res / .ref / .字段 */
+prop_chain:
     while (is_op(p, ".")) {
         next(p);
         Node *prop = mk_node(N_PROP);
@@ -357,6 +374,20 @@ Node *parse_stmt(Parser *p) {
             if (is_op(p, "=")) {                  /* 初值：写入跟随层同名槽位 */
                 next(p);
                 n->init = parse_expr(p);
+            }
+            expect_op(p, ";");
+            return n;
+        }
+        /* 数组类型变量声明: int[] a = expr; / int[] a; */
+        if (p->i + 2 < p->n && p->t[p->i].kind == T_ID && is_type_name(p->t[p->i].text) &&
+            p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "[") == 0 &&
+            p->t[p->i + 2].kind == T_OP && strcmp(p->t[p->i + 2].text, "]") == 0) {
+            next(p); next(p); next(p);   /* int [ ] */
+            Node *n = mk_node(N_ASSIGN);
+            n->name = expect_id(p);
+            if (is_op(p, "=")) {
+                next(p);
+                n->expr = parse_expr(p);
             }
             expect_op(p, ";");
             return n;

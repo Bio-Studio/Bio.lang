@@ -1,29 +1,8 @@
 program main;
 
-Class Vector {
-    int x;
-    int y;
-    void __init__(x int, y int) {
-        this::x = x;
-        this::y = y;
-    }
-
-    void show(&w f io IO) {
-        io::println(SIO::format("%d ", this::x));
-        io::println(SIO::format("%d\n", this::y)); 
-    }
-
-    void add(&r f vec Vector) {
-        this::x += vec::x;
-        this::y += vec::y;
-    }
-
-}
-
 Main {
     void exec() {
-        Vector v = new Vector(1, 2);
-        v::add(new Vector(3, 4));
-        v::show(CIO);
+        
     }
 }
+

@@ -179,7 +179,8 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                     }
                     return base->res->res;
                 }
-                if (strcmp(e->name, "ref") == 0) {
+                if (strcmp(e->name, "cause") == 0 || strcmp(e->name, "ref") == 0) {
+                    /* ALL 结构含 res 与 cause；.cause 合规，.ref 为兼容别名 */
                     if (base->res->ref) return mk_str(base->res->ref);
                     return mk_str("(无拒绝原因)");
                 }

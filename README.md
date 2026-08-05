@@ -54,7 +54,7 @@ src/
 | **多返回类型** | 方法可声明返回类型 `void/int/float/double/string/char`（可带 `[]` 数组），**所有流统一**：签名流/分叉/Class/Main | `int add(a int, b int) { res a + b; }`、`string[] titles() { res "勇者", "传说"; }` |
 | **res 多值** | `res a, b, c;` 逗号分隔 → 返回数组 | `res 1, 2, 3;` → `[1, 2, 3]`；单值 `res x;` 保持原样 |
 | 请求结果 | `ALL x = 流::方法(...);` | `ALL r = MyCalc::add(3, 4);` |
-| 结果解包 | `.res` / `.ref`；`res r;` / `cause r;` 解出 ALL 值的 res / 拒绝原因 | `r.res` 取值、`bad.ref` 取拒绝原因；`res r;` 转发成功值、`cause r;` 转发拒绝原因 |
+| 结果解包 | `.res` / `.cause`（ALL 结构含 res 与 cause）；`res r;` / `cause r;` 解出 ALL 值的 res / 拒绝原因 | `r.res` 取值、`bad.cause` 取拒绝原因；`res r;` 转发成功值、`cause r;` 转发拒绝原因 |
 | **拒绝传播** | 被拒的 Result 作为参数 → 请求随之被拒 | `MyCalc::add(1, bad)` → ref |
 | 控制流 | `if/else if/else`、`while`、`for(;;)`、`break`、`continue` | 条件真值：0/空串/被拒 = 假 |
 | **子流** | **IO** IOStream 通用流（默认存在，核心方法 `println`/`readln`/`write`/`read`）/ **CIO** IO 的 Console 实现（+ 预置分叉 Console）/ **FIO** IO 的文件实现 / **SIO** IO 的字符串实现 / **Com** Comstream 计算流。IO 聚合 CIO/FIO/SIO | `IO::println` `IO::readln` `IO::write` `IO::read` `FIO::readFile` `SIO::format` |
@@ -66,7 +66,7 @@ src/
 | **变量修饰** | `const int x = 10;` → Constantstream（只读，重复声明/修改拒绝，方法内与**顶层**均可）；`int x = 10;` → 作用域流；`thread int x = 10;` → 线程变量（线程作用域） | `const int PI = 3;` 改 PI → 拒绝「常量不能修改」 |
 | 运算 | `+ - * / == != < > <= >=`、数字、字符串、变量；**复合赋值** `+= -= *= /= %=`（变量与 `this::属性` 均可） | `ALL y = x.res * 2 + 1;`、`this::n += 1;` |
 | 基本类型 | `int` `float` `double` `string` `char`（字段：`int n;` 类型 对象） | |
-| **数组/Vector（Bio 类）** | Array/Vector 是 **Bio 代码实现的类**（非解释器内置），底层调 Solid 连续流；`new Array(n)`/`new Vector()` 创建；方法 `__init__/len/get/set/push/pop/clear/join` | `ALL a = new Array(3); a::set(0, 10); a::push(40); a::len().res; a::join("-").res` |
+| **数组/Vector（Bio 类）** | Array/Vector 是 **Bio 代码实现的类**（非解释器内置），底层调 Solid 连续流；`new Array(n)`/`new Vector()` 创建；**数组字面量** `new int[n]`；方法 `__init__/len/get/set/push/pop/clear/join` | `ALL a = new Array(3); a::set(0, 10); a::push(40); a::len().res; a::join("-").res`；`int[] a = new int[12];` |
 | **Solid 连续流** | 连续存储 + 自动分配 + **移动头指针**；`new/len/get/set/push/pop/read/peek/head/resetHead/clear/join` | `ALL s = Solid::new().res; Solid::read(s).res`（头指针前进） |
 | **Arrays 集合流** | 包含所有 Array/Vector 实例；new 一个 Array 默认插入（__init__ 里 `Arrays::add(this)`，Bio 代码可见）；`count/all/get/add/forget`；动态数组 `vector()` | `Arrays::count().res`、`ALL v = Arrays::vector(); v::push(10);` |
 | **二进制库流** | `Stream 名 & "文件.so" {}`；库导出函数自动成为流方法；`&func(...)` 全局二进制调用 | `Stream m & "libm.so" {}` → `m::sin(1.0)`；`&pow(2,10)` |
