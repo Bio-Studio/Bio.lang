@@ -89,8 +89,72 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
     return mk_ref("CIO refused: no such method (bytes: read/write; text: get/getln/println/print; readInt/readNumber/error)");
 }
 
-/* ---------- FIO：文件 ---------- */
+/* ---------- FIO：文件（IOStream 的文件实现）----------
+ * 除 readFile/writeFile/appendFile/exists 便捷方法外，实现 IO 核心方法：
+ * 先 FIO::open(path, mode) 打开「当前文件」流，然后
+ *   文本流：print/println 写 / get/getln 读；字节流：write 写 / read 读
+ */
+static FILE *fio_cur = NULL;
+static int fio_cur_writable = 0;   /* 当前文件允许写 */
+
 static Result *fio_request(const char *method, Value **args, int nargs) {
+    if (strcmp(method, "open") == 0) {
+        const char *path = arg_str(args, nargs, 0, "");
+        const char *mode = arg_str(args, nargs, 1, "r");
+        if (fio_cur) { fclose(fio_cur); fio_cur = NULL; }
+        fio_cur = fopen(path, mode);
+        if (!fio_cur) {
+            char buf[256];
+            snprintf(buf, sizeof buf, "FIO refused: cannot open file %s (mode %s)", path, mode);
+            return mk_ref(astrdup(buf));
+        }
+        fio_cur_writable = mode[0] == 'w' || mode[0] == 'a';
+        return mk_res(mk_str(""));
+    }
+    if (strcmp(method, "close") == 0) {
+        if (fio_cur) { fclose(fio_cur); fio_cur = NULL; }
+        return mk_res(mk_str(""));
+    }
+    /* ---- IO 核心方法（文件实现）：写当前文件 ---- */
+    if (strcmp(method, "write") == 0 || strcmp(method, "print") == 0 ||
+        strcmp(method, "println") == 0) {
+        if (!fio_cur || !fio_cur_writable)
+            return mk_ref("FIO refused: no writable file open (use FIO::open(path, \"w\") first)");
+        for (int i = 0; i < nargs; i++) {
+            if (i) fputc(' ', fio_cur);
+            Value *v = args[i];
+            if (v->kind == V_RES && v->res && !v->res->ref) v = v->res->res;   /* 自动解包 */
+            if (v->kind == V_STR) fputs(v->str, fio_cur);
+            else if (v->kind == V_NUM) { char b[32]; snprintf(b, sizeof b, "%g", v->num); fputs(b, fio_cur); }
+        }
+        if (strcmp(method, "println") == 0) fputc('\n', fio_cur);
+        fflush(fio_cur);
+        return mk_res(mk_str(""));
+    }
+    /* ---- IO 核心方法（文件实现）：读当前文件 ---- */
+    if (strcmp(method, "read") == 0) {
+        /* 字节流：读一个原始字节（0-255），EOF 返回 -1 */
+        if (!fio_cur) return mk_ref("FIO refused: no file open (use FIO::open(path) first)");
+        int c = fgetc(fio_cur);
+        return mk_res(mk_num(c == EOF ? -1 : (double)c));
+    }
+    if (strcmp(method, "get") == 0) {
+        /* 文本流：读一个字符（单个字节），EOF 返回空串 */
+        if (!fio_cur) return mk_ref("FIO refused: no file open (use FIO::open(path) first)");
+        int c = fgetc(fio_cur);
+        if (c == EOF) return mk_res(mk_str(""));
+        char b[2] = { (char)c, 0 };
+        return mk_res(mk_str(astrdup(b)));
+    }
+    if (strcmp(method, "getln") == 0 || strcmp(method, "readln") == 0) {
+        /* 文本流：读一行 */
+        if (!fio_cur) return mk_ref("FIO refused: no file open (use FIO::open(path) first)");
+        char buf[1024];
+        if (!fgets(buf, sizeof buf, fio_cur)) return mk_res(mk_str(""));
+        size_t len = strlen(buf);
+        while (len && (buf[len-1] == '\n' || buf[len-1] == '\r')) buf[--len] = 0;
+        return mk_res(mk_str(astrdup(buf)));
+    }
     if (strcmp(method, "readFile") == 0) {
         const char *path = arg_str(args, nargs, 0, "");
         FILE *f = fopen(path, "r");

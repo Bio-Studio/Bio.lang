@@ -56,11 +56,17 @@ int compile_program(const char *src, const char *outpath) {
         esc);
     fclose(f);
 
-    /* 3. 调用 gcc：链接解释器运行时 libbio.a */
+    /* 3. 调用 gcc：直接编译解释器运行时源码（不依赖预建的 libbio.a） */
     char cmd[8192];
     snprintf(cmd, sizeof cmd,
-        "gcc -O2 -I\"%s/src\" -o \"%s\" \"%s\" \"%s/libbio.a\" -lm",
-        BIO_HOME, outpath, tmp, BIO_HOME);
+        "gcc -O2 -I\"%s/src\" -o \"%s\" \"%s\" "
+        "\"%s/src/arena.c\" \"%s/src/lexer.c\" \"%s/src/value.c\" "
+        "\"%s/src/builtin.c\" \"%s/src/parser.c\" \"%s/src/interp.c\" "
+        "\"%s/src/bts.c\" \"%s/src/compile.c\" -lm",
+        BIO_HOME, outpath, tmp,
+        BIO_HOME, BIO_HOME, BIO_HOME,
+        BIO_HOME, BIO_HOME, BIO_HOME,
+        BIO_HOME, BIO_HOME);
     int rc = system(cmd);
     remove(tmp);
     if (rc != 0) {

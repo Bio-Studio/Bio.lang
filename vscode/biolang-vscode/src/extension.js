@@ -23,6 +23,16 @@ const STREAMS = {
     { name: 'error',     detail: 'CIO::error(...) — 输出到 stderr（不换行）',         doc: '示例: `CIO::error("出错了");`' }
   ],
   FIO: [
+    /* IO 核心方法（文件实现）：先 open 当前文件流 */
+    { name: 'open',     detail: 'FIO::open(路径, 模式?) — 打开当前文件流',  doc: '模式: "r"(默认)/"w"/"a"；之后 write/read/println/getln 操作它' },
+    { name: 'close',    detail: 'FIO::close() — 关闭当前文件流',            doc: '示例: `FIO::close();`' },
+    { name: 'println',  detail: 'FIO::println(...) — 写文本行到当前文件',    doc: '文本流；需先 open(path,"w")' },
+    { name: 'print',    detail: 'FIO::print(...) — 写文本到当前文件（不换行）', doc: '文本流；需先 open(path,"w")' },
+    { name: 'write',    detail: 'FIO::write(...) — 写原始字节到当前文件',     doc: '字节流；需先 open(path,"w")' },
+    { name: 'getln',    detail: 'FIO::getln() — 从当前文件读一行（文本流）',  doc: '文本流；需先 open(path)' },
+    { name: 'get',      detail: 'FIO::get() — 从当前文件读一个字符（文本流）', doc: '文本流；EOF 返回空串' },
+    { name: 'read',     detail: 'FIO::read() — 从当前文件读一个原始字节',     doc: '字节流；EOF 返回 -1' },
+    /* 便捷文件操作 */
     { name: 'readFile',  detail: 'FIO::readFile(路径) — 读取整个文件（不存在 → 拒绝）', doc: '示例: `ALL t = FIO::readFile("/tmp/a.txt");`' },
     { name: 'writeFile', detail: 'FIO::writeFile(路径, 内容) — 写入文件（覆盖）',       doc: '示例: `FIO::writeFile("/tmp/a.txt", "hi");`' },
     { name: 'appendFile',detail: 'FIO::appendFile(路径, 内容) — 追加写入',             doc: '示例: `FIO::appendFile("/tmp/a.txt", "more");`' },
@@ -432,6 +442,30 @@ function activate(context) {
     panel.webview.postMessage({ type: 'ready' });
   });
 
+  /* 编译当前文件：bio -b 文件 → 自包含可执行文件（输出到文件目录） */
+  const compileFile = vscode.commands.registerCommand('biolang.compileFile', async () => {
+    const doc = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
+    if (!doc) { vscode.window.showWarningMessage('没有打开的文件'); return; }
+    if (doc.languageId !== 'biolang') { vscode.window.showWarningMessage('当前文件不是 BioLang（.bl/.bio）'); return; }
+    await doc.save();
+    const out = vscode.window.createOutputChannel('BioLang 编译');
+    out.show(true);
+    const base = doc.fileName.replace(/\.[^.]+$/, '');
+    const outBin = base;   /* 去掉扩展名，如 example.bio → example */
+    const cwd = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]
+      ? vscode.workspace.workspaceFolders[0].uri.fsPath : path.dirname(doc.fileName);
+    out.appendLine(`$ bio -b ${doc.fileName} -o ${outBin}`);
+    execFile('bio', ['-b', doc.fileName, '-o', outBin], { cwd }, (err, stdout, stderr) => {
+      if (stdout) out.append(stdout);
+      if (stderr) out.append(stderr);
+      if (err) {
+        out.appendLine(`[bio 编译失败 退出码 ${err.code}]（确认 bio 在 PATH 中：~/.local/bin/bio）`);
+      } else {
+        out.appendLine(`✔ 编译成功: ${outBin}`);
+      }
+    });
+  });
+
   const runDemo = vscode.commands.registerCommand('biolang.runDemo', () => {
     const out = vscode.window.createOutputChannel('BioLang');
     out.show(true);
@@ -443,7 +477,7 @@ function activate(context) {
     });
   });
 
-  context.subscriptions.push(provider, runFile, runDemo);
+  context.subscriptions.push(provider, runFile, compileFile, runDemo);
 }
 
 function deactivate() {}

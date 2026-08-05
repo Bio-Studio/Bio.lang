@@ -2,7 +2,7 @@
   "name": "biolang",
   "displayName": "BioLang",
   "description": "BioLang 语言支持：语法高亮、代码片段、补全、运行命令（bio CLI）",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "publisher": "bio",
   "license": "MIT",
   "engines": {
@@ -46,6 +46,10 @@
         "title": "BioLang: 运行当前文件 (bio)"
       },
       {
+        "command": "biolang.compileFile",
+        "title": "BioLang: 编译当前文件 (bio -b)"
+      },
+      {
         "command": "biolang.runDemo",
         "title": "BioLang: 运行内置演示"
       }
@@ -56,11 +60,20 @@
           "when": "resourceLangId == biolang",
           "command": "biolang.runFile",
           "group": "navigation"
+        },
+        {
+          "when": "resourceLangId == biolang",
+          "command": "biolang.compileFile",
+          "group": "navigation"
         }
       ],
       "commandPalette": [
         {
           "command": "biolang.runFile",
+          "when": "resourceLangId == biolang"
+        },
+        {
+          "command": "biolang.compileFile",
           "when": "resourceLangId == biolang"
         },
         {
