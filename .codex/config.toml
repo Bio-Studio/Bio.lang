@@ -1,0 +1,8 @@
+# BioLang 项目级 Codex 配置
+# 覆盖 ~/.codex/config.toml 的同名项；未列出的设置（模型、provider、鉴权等）继承全局配置。
+
+# 与全局一致：最大推理强度（本项目 C 代码 + 构建系统调试需要）
+model_reasoning_effort = "max"
+
+# 沙箱：允许在工作区内写文件（默认值，显式声明以防全局被改）
+sandbox_mode = "workspace-write"
