@@ -7,8 +7,10 @@ libbio.a
 # Legacy single-file archive (source is now split under src/)
 biolang.c.mono
 
-# Local Claude config
+# Local agent config (must not be committed/pushed)
 .claude/
+.codex/
+.agents/
 
 # System / editor
 *.swp

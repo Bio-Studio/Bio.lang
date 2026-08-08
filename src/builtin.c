@@ -764,24 +764,6 @@ Result *bin_request(Stream *s, const char *method, Value **args, int nargs) {
     return mk_res(mk_num(r));
 }
 
-/* Global binary library table (for global &func() calls) */
-typedef struct BinLib { Stream *s; struct BinLib *next; } BinLib;
-static BinLib *binlibs = NULL;
-void binlib_register(Stream *s) {
-    BinLib *b = aalloc(sizeof(BinLib));
-    b->s = s; b->next = binlibs; binlibs = b;
-}
-/* Global lookup of &func(): the first library that provides this symbol */
-Result *bin_call_global(const char *method, Value **args, int nargs) {
-    for (BinLib *b = binlibs; b; b = b->next) {
-        Result *r = bin_request(b->s, method, args, nargs);
-        if (!r->ref) return r;              /* symbol found and call succeeded */
-        if (strcmp(r->ref, "binary stream refused: no such symbol in library (or not a function)") != 0)
-            return r;                       /* symbol found but the call failed */
-    }
-    return mk_ref("binary call refused: no library provides function &func");
-}
-
 /* ---------- Com: Comstream computation stream (a branch of instantaneous streams, handling various instantaneous computations) ---------- */
 #include <math.h>
 

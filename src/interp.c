@@ -134,8 +134,15 @@ Result *interp_exec_method(Interp *in, Method *m, Value **args, int nargs, VarMa
 }
 
 Result *stream_request(Interp *in, Stream *s, const char *method, Value **args, int nargs) {
-    if (s->builtin == B_BIN) return bin_request(s, method, args, nargs);
-    if (s->builtin) return builtin_request(s->builtin, method, args, nargs);
+    if (s->builtin == B_BIN) {
+        /* De-special-cased: a Bio method implemented in the stream body runs as a
+         * normal method; signatures and anything else dispatch to the exported
+         * symbol of the attached library. */
+        Method *bm = method_find(s, method);
+        if (!bm || !bm->stmts) return bin_request(s, method, args, nargs);
+    } else if (s->builtin) {
+        return builtin_request(s->builtin, method, args, nargs);
+    }
     Method *m = method_find(s, method);
     if (!m) {
         /* Signature-stream method missing → fall back first to the signature stream's implementation stream (D_FORK sig == s->name);
@@ -257,24 +264,6 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                 return data->items[data->head + i];
             }
             return mk_refval("refused: cannot index a non-array");
-        }
-        case N_BINCALL: {
-            Value **vals = aalloc(sizeof(Value *) * 64);
-            int nvals = 0;
-            for (int i = 0; i < e->nargs; i++) {
-                Value *v = eval_expr(in, e->args[i], scope);
-                if (is_rejected(v)) {
-                    char buf[256];
-                    snprintf(buf, sizeof buf, "refused: argument %s refused, binary function &%s also refused",
-                             reject_reason(v), e->mname);
-                    return mk_refval(astrdup(buf));
-                }
-                vals[nvals++] = v;
-            }
-            Result *r = bin_call_global(e->mname, vals, nvals);
-            Value *w = aalloc(sizeof(Value));
-            w->kind = V_RES; w->res = r;
-            return w;
         }
         case N_CALL: {
             Value **vals = aalloc(sizeof(Value *) * 64);
@@ -406,7 +395,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
 void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
     switch (st->kind) {
         case N_REALME: {
-            /* Reference variable declaration (draft realme): name &permission follow [type] [= initial value] */
+            /* Reference variable declaration (a reference is a type): &permission follow type name [= initial value] */
             Value *ref = mk_refobj(st->ref_perm, st->ref_follow, st->name);
             if (st->init) {
                 Value *iv = eval_expr(in, st->init, scope);
@@ -664,15 +653,23 @@ void build(Interp *in) {
     stream_add(in, stream_new("Console", B_CIO));   /* CIO's prebuilt fork */
     for (Decl *d = in->decls; d; d = d->next) {
         if (d->kind == D_BIN) {
-            /* Binary library stream: loaded via dlopen, exported functions automatically become stream methods */
+            /* Binary library stream: dlopen the attached library (exported symbols become
+             * methods); the body may also declare normal Bio methods and fields — no special case. */
             void *h = dlopen(d->file, RTLD_LAZY | RTLD_GLOBAL);
             if (!h) {
                 fprintf(stderr, "⚠️ binary library load failed %s: %s\n", d->file, dlerror());
             }
-            Stream *b = aalloc(sizeof(Stream));
-            b->name = d->name; b->builtin = B_BIN; b->dl = h; b->methods = NULL; b->next = NULL;
+            Stream *b = stream_new(d->name, B_BIN);
+            b->dl = h;
+            for (int i = 0; i < d->nmethods; i++) {
+                MethodEntry *e = aalloc(sizeof(MethodEntry));
+                e->m = &d->methods[i];
+                e->next = b->methods;
+                b->methods = e;
+            }
+            for (int i = 0; i < d->nfields; i++)
+                var_set(b->fields, d->fields[i].name, field_default(d->fields[i].type));
             stream_add(in, b);
-            if (h) binlib_register(b);
             continue;
         }
         if (d->kind == D_FORK) {
@@ -807,4 +804,3 @@ void run_source(const char *src) {
     if (check_assumptions(in)) return;
     run_program(in);
 }
-

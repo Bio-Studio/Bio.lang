@@ -151,9 +151,9 @@
   "BioLang reference variable declaration": {
     "prefix": "realme",
     "body": [
-      "${1:name} &${2|r,w,rw,m|} ${3|u,f,a|} ${4:int}${5: = ${6:value}};"
+      "&${1|r,w,rw,m|} ${2|u,f,a|} ${3:int} ${4:name}${5: = ${6:value}};"
     ],
-    "description": "Reference variable declaration (original realme syntax): name &perm follow [type] [= init]"
+    "description": "Reference variable declaration (a reference is a type): &perm follow type name [= init]"
   },
   "BioLang binary library stream": {
     "prefix": "bins",
@@ -163,13 +163,6 @@
       ""
     ],
     "description": "Binary library stream: dlopen-loaded; exported symbols become stream methods"
-  },
-  "BioLang binary call": {
-    "prefix": "bincall",
-    "body": [
-      "ALL ${1:r} = &${2:func}(${3:args});"
-    ],
-    "description": "Call an exported symbol of a loaded binary library"
   },
   "BioLang thread (spawn)": {
     "prefix": "spawn",

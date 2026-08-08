@@ -18,7 +18,7 @@ Main {
 - **Objects & classes** — `Class` declarations, `new`, automatic `__init__`, `this`, object methods.
 - **Interpret or compile** — `bio` interprets; `bio -b` emits a self-contained native executable (no `bio` needed at runtime).
 - **Concurrency** — cooperative threads (`Threads`) and a round-robin task manager (`Taskm`).
-- **Binary interop** — link native `.so` libraries and call their functions directly (`&func()`, `Stream m & "libm.so"`).
+- **Binary interop** — link native `.so` libraries and call their exported functions as stream methods (`Stream m & "libm.so"` → `m::sin(0)`).
 - **Smart references** — `&perm follow name` (`r/w/rw/m` × `u/f/a`) with a `Ref` API for read/write/move.
 
 ## Platform support
@@ -163,7 +163,7 @@ src/
 Located at `vscode/biolang-vscode/` (installable to `~/.vscode/extensions`).
 
 - **Syntax highlighting** — `.bl` / `.bio` files (keywords incl. `cause`, types `int`/`float`/`double`/`string`/`char`, strings, numbers, calls, comments, operators, smart refs `&r u x`).
-- **Code snippets** — main skeleton, stream signatures (`a int` args), fork, class, res/ref cause, need (incl. Class), sref smart refs, bins/bincall binary libs, spawn threads, taskm, if/while/for.
+- **Code snippets** — main skeleton, stream signatures (`a int` args), fork, class, res/ref cause, need (incl. Class), sref smart refs, bins binary libs, spawn threads, taskm, if/while/for.
 - **Completions** — `Stream::` method completion (builtin CIO/FIO/SIO/Array/Threads/Taskm/Ref/Console + streams declared in docs), and `&` smart-ref permission `r/w/rw` → follow `u/m/a` hints.
 - **Run commands** — `BioLang: Run current file (bio)` (editor button + command palette) opens a **Webview interactive panel** — program output streams live, and the input box feeds stdin to `CIO`; `BioLang: Run built-in demos` runs them directly.
 - Reload VS Code (or "Developer: Reload Window") after installing; the run commands need `bio` on PATH (`~/.local/bin/bio`).
@@ -200,10 +200,11 @@ Located at `vscode/biolang-vscode/` (installable to `~/.vscode/extensions`).
 | **Array/Vector (Bio classes)** | Array/Vector are **classes implemented in Bio code** (not interpreter builtins) over the Solid stream; `new Array(n)` / `new Vector()`; **array literals** `new type[n]` are type-generic (base types and custom classes); methods `__init__/len/get/set/push/pop/clear/join` | `ALL a = new Array(3); a::set(0, 10); a::push(40); a::len().res; a::join("-").res`; `int[] a = new int[12];`, `ALL hs = new Hero[3];` |
 | **Solid stream** | contiguous storage + auto-grow + **moving head pointer**; `new/len/get/set/push/pop/read/peek/head/resetHead/clear/join` | `ALL s = Solid::new().res; Solid::read(s).res` (head advances) |
 | **Arrays collection** | holds every Array/Vector instance; a `new Array` registers itself (`Arrays::add(this)` in `__init__`, visible in Bio code); `count/all/get/add/forget`; dynamic array `vector()` | `Arrays::count().res`, `ALL v = Arrays::vector(); v::push(10);` |
-| **Binary library streams** | `Stream name & "file.so" {}`; exported functions become stream methods automatically; `&func(...)` global binary call | `Stream m & "libm.so" {}` → `m::sin(1.0)`; `&pow(2,10)` |
+| **Binary library streams** | `Stream name & "file.so" { ... }`; the body is a normal stream body (Bio methods/fields allowed); exported functions become stream methods automatically | `Stream m & "libm.so" { int doubleIt(x int) { res x * 2; } }` → `m::sin(1.0)`, `m::doubleIt(21)` |
+| ~~Bare binary calls~~ | ~~`&func(...)`~~ — **removed/deprecated: too dangerous** (silent symbol search across every loaded library). Call through the binary library stream | `m::pow(2, 10)` |
 | **Threads** | `Threads::spawn("method", args...)` / `yield` / `join` / `active` / `self` | cooperative user threads (ucontext), threads run bare method calls |
 | **Taskm** | `Taskm::add/interval/run/stop/active` | auto round-robin of all tasks until done; `interval(ms)` sets the rotation interval |
-| **Smart references** | `&perm follow target-name` (perm r/w/rw/m × follow u/f/a) + `Ref::read/write/move/target/perm`; reference variable declarations `name &perm follow [type] [= init];` | `&r u counter` read-only program-level; `&r f x` read-only method-level; `&w a note` write scope-level; `&m f x` movable + `Ref::move(mv)` takes the target; `count &w u int = 5;` |
+| **Smart references** | `&perm follow target-name` (perm r/w/rw/m × follow u/f/a) + `Ref::read/write/move/target/perm`; a reference is a type, so variable declarations are `&perm follow type name [= init];`; parameters keep the usual `name type` order and thus write `&perm follow name type` | `&r u counter` read-only program-level; `&r f x` read-only method-level; `&w a note` write scope-level; `&m f x` movable + `Ref::move(mv)` takes the target; `&w u int count = 5;` |
 | **Scope chain** | method mini-stream → thread/main-thread scope (area) → program level (Unistream), each with its own memory stream | thread `a`-layer isolation; `u`-layer shared program-wide |
 
 > Binary-function calling convention: prototypes called as `double(*)(double,...)` (at most 6 args, numeric only); string/pointer arguments are not yet supported.

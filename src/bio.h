@@ -51,7 +51,7 @@ typedef struct { Result *ret; int brk; int cont; } Flow;
 
 typedef enum {
     N_NUM, N_STR, N_VAR, N_CALL, N_PROP, N_BINOP, N_INDEX,
-    N_ASSIGN, N_CALLSTMT, N_RET, N_BINCALL, N_REF, N_REALME, N_UNWRAP,
+    N_ASSIGN, N_CALLSTMT, N_RET, N_REF, N_REALME, N_UNWRAP,
     N_IF, N_WHILE, N_FOR, N_BREAK, N_CONTINUE
 } NodeKind;
 
@@ -152,8 +152,6 @@ char *astrdup(const char *s);
 
 Result *builtin_request(int kind, const char *method, Value **args, int nargs);
 Value *mk_arr(int cap);
-void binlib_register(Stream *s);
-Result *bin_call_global(const char *method, Value **args, int nargs);
 Result *bin_request(Stream *s, const char *method, Value **args, int nargs);
 Result *bts_request(const char *method, Value **args, int nargs);
 Result *taskm_request(const char *method, Value **args, int nargs);

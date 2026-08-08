@@ -162,12 +162,30 @@ The third and second forms are essentially variants of the first assumption form
 
 `r`, `w`, `rw`, `m` (movable) \* `u` (unit/program-level), `f` (function/method), `a` (area/scope)
 
+A reference is a type, so variable declarations write `&perm follow type name`:
+
 ```
-realme &r u int
-realme &w u int
-realme &r f int
-realme &m f int
+&r u int count = 5;    // read-only program-level reference to an int named count
+&w u int score;        // writable program-level reference
+&m f int x;            // movable method-level reference
 ...
+```
+
+Parameters keep the usual parameter order (`name type`) and therefore reverse
+the declaration order: `&perm follow name type`, e.g. `void show(&r f io IO)`.
+
+## Removed syntax: bare binary calls
+
+`&func(...)` — a global call that searched every loaded binary library for an
+exported symbol — is **deprecated and removed**: the implicit symbol lookup is
+too dangerous. It can silently bind a call to the wrong library or the wrong
+function (or to arbitrary symbols in the process), offers no static
+guarantees, and bypasses the stream model entirely. Always call exported
+functions through their binary library stream:
+
+```
+m::pow(2, 10)   // ✓ qualified stream method
+&pow(2, 10)     // ✗ removed — bare binary calls are no longer accepted
 ```
 
 ## Modes

@@ -140,7 +140,7 @@ Node *parse_primary(Parser *p) {
         }
     }
     else if (t->kind == T_OP && strcmp(t->text, "&") == 0) {
-        /* smart reference: &<permission> <follow> <target name>    or   binary call: &func(...) */
+        /* smart reference: &<permission> <follow> <target name> */
         if (peek(p)->kind == T_ID && p->i + 2 < p->n && p->t[p->i + 2].kind == T_ID &&
             !(p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "(") == 0)) {
             Node *rf = mk_node(N_REF);
@@ -156,16 +156,22 @@ Node *parse_primary(Parser *p) {
             e = rf;
             return e;
         }
-        Node *b = mk_node(N_BINCALL);
-        b->mname = expect_id(p);
+        /* Bare binary call &func(...) has been removed: the global symbol
+         * lookup across every loaded library is too dangerous. */
+        const char *fn = expect_id(p);
+        fprintf(stderr,
+                "syntax error: bare binary call '&%s(...)' is no longer supported "
+                "(deprecated — too dangerous); call it through a binary library stream, "
+                "e.g. m::%s(...)\n",
+                fn, fn);
+        p->err = 1;
         expect_op(p, "(");
-        b->args = aalloc(sizeof(Node *) * 64); b->nargs = 0;
-        while (!is_op(p, ")") && !p->err) {
-            b->args[b->nargs++] = parse_expr(p);
+        while (!is_op(p, ")") && peek(p)->kind != T_EOF) {
+            parse_expr(p);
             if (is_op(p, ",")) next(p);
         }
         expect_op(p, ")");
-        e = b;
+        e = mk_node(N_NUM);
     }
     else if (t->kind == T_OP && strcmp(t->text, "(") == 0) {
         e = parse_expr(p);
@@ -362,46 +368,63 @@ Node *parse_stmt(Parser *p) {
         return n;
     }
     if (t->kind == T_OP && strcmp(t->text, "&") == 0) {
-        Node *n = mk_node(N_CALLSTMT);
-        Node *b = mk_node(N_BINCALL);
         next(p); /* & */
-        b->mname = expect_id(p);
-        expect_op(p, "(");
-        b->args = aalloc(sizeof(Node *) * 64); b->nargs = 0;
-        while (!is_op(p, ")") && !p->err) {
-            b->args[b->nargs++] = parse_expr(p);
-            if (is_op(p, ",")) next(p);
+        /* Bare binary call statement &func(...); has been removed (deprecated — too dangerous). */
+        if (peek(p)->kind == T_ID && p->i + 1 < p->n &&
+            p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "(") == 0) {
+            const char *fn = next(p)->text;
+            fprintf(stderr,
+                    "syntax error: bare binary call statement '&%s(...);' is no longer supported "
+                    "(deprecated — too dangerous); call it through a binary library stream, "
+                    "e.g. m::%s(...)\n",
+                    fn, fn);
+            p->err = 1;
+            expect_op(p, "(");
+            while (!is_op(p, ")") && peek(p)->kind != T_EOF) {
+                parse_expr(p);
+                if (is_op(p, ",")) next(p);
+            }
+            expect_op(p, ")");
+            expect_op(p, ";");
+            return mk_node(N_NUM);
         }
-        expect_op(p, ")");
-        n->l = b;
+        /* Reference variable declaration (a reference is a type):
+         * &permission follow type name [= initial value]; */
+        Node *n = mk_node(N_REALME);
+        if (peek(p)->kind != T_ID) {
+            fprintf(stderr, "syntax error: expected reference permission (r/w/rw/m)\n");
+            p->err = 1;
+            return mk_node(N_NUM);
+        }
+        n->ref_perm = next(p)->text;
+        if (!valid_perm(n->ref_perm)) {
+            fprintf(stderr, "syntax error: invalid reference permission %s (should be r/w/rw/m)\n", n->ref_perm); p->err = 1;
+        }
+        if (peek(p)->kind != T_ID) {
+            fprintf(stderr, "syntax error: expected reference follow (u/f/a)\n");
+            p->err = 1;
+            return mk_node(N_NUM);
+        }
+        n->ref_follow = next(p)->text;
+        if (!valid_follow(n->ref_follow)) {
+            fprintf(stderr, "syntax error: invalid reference follow %s (should be u/f/a)\n", n->ref_follow); p->err = 1;
+        }
+        if (peek(p)->kind != T_ID) {
+            fprintf(stderr, "syntax error: reference declaration requires a type (e.g. &r u int count = 5;)\n");
+            p->err = 1;
+        } else {
+            next(p);                              /* type: int / CIO / T / ... (may carry []) */
+            if (is_op(p, "[")) { next(p); expect_op(p, "]"); }
+        }
+        n->name = expect_id(p);                   /* variable name */
+        if (is_op(p, "=")) {                      /* initial value: written to the same-name slot in the follow layer */
+            next(p);
+            n->init = parse_expr(p);
+        }
         expect_op(p, ";");
         return n;
     }
     if (t->kind == T_ID) {
-        /* reference variable declaration (original spec realme &permission follow type): name &permission follow [type] [= initial value]; */
-        if (p->i + 2 < p->n && p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "&") == 0) {
-            Node *n = mk_node(N_REALME);
-            n->name = next(p)->text;              /* name */
-            next(p);                              /* & */
-            n->ref_perm = next(p)->text;
-            if (!valid_perm(n->ref_perm)) {
-                fprintf(stderr, "syntax error: invalid reference permission %s (should be r/w/rw/m)\n", n->ref_perm); p->err = 1;
-            }
-            n->ref_follow = next(p)->text;
-            if (!valid_follow(n->ref_follow)) {
-                fprintf(stderr, "syntax error: invalid reference follow %s (should be u/f/a)\n", n->ref_follow); p->err = 1;
-            }
-            if (peek(p)->kind == T_ID && is_type_name(peek(p)->text)) {
-                next(p);                          /* type (for validation, may include []) */
-                if (is_op(p, "[")) { next(p); expect_op(p, "]"); }
-            }
-            if (is_op(p, "=")) {                  /* initial value: written to the same-name slot in the follow layer */
-                next(p);
-                n->init = parse_expr(p);
-            }
-            expect_op(p, ";");
-            return n;
-        }
         /* array-typed variable declaration: int[] a = expr; / int[] a;  (must be checked before the array-index case) */
         if (p->i + 2 < p->n && p->t[p->i].kind == T_ID && is_type_name(p->t[p->i].text) &&
             p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "[") == 0 &&
@@ -778,7 +801,7 @@ Decl *parse_program(Parser *p) {
         else if (t->kind == T_KW && strcmp(t->text, "Stream") == 0) {
             next(p);
             d->name = expect_id(p);
-            if (is_op(p, "&")) {                 /* Stream <name> & <binary library file> {} */
+            if (is_op(p, "&")) {                 /* Stream <name> & <binary library file> { normal stream body } */
                 next(p);
                 d->kind = D_BIN;
                 Tok *ft = next(p);
@@ -787,7 +810,9 @@ Decl *parse_program(Parser *p) {
                 }
                 d->file = ft->text;
                 expect_op(p, "{");
-                parse_stmts_until(p, "}", &(int){0});   /* } already consumed */
+                /* De-special-cased: the body is a normal stream body (methods + fields),
+                 * exactly like any other Stream declaration. */
+                parse_members(p, &d->methods, &d->nmethods, &d->fields, &d->nfields);
                 goto decl_done;
             }
             d->kind = D_SIG;

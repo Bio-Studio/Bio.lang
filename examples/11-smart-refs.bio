@@ -30,9 +30,9 @@ Main {
         // A read-only reference refuses writes (shown via .cause).
         IO::println("read-only write →", Ref::write(rr, 99).cause);
 
-        // Reference variable declarations (realme syntax):
-        //   name &perm follow [type] [= init]
-        count &w u int = 5;          // w-u ref to "count", initialized to 5
+        // Reference variable declarations (a reference is a type):
+        //   &perm follow type name [= init]
+        &w u int count = 5;          // w-u ref to "count", initialized to 5
         ALL rc = &r u count;
         IO::println("count decl →", Ref::read(rc).res);
 

@@ -324,13 +324,13 @@ static const char *DEMO13 =
     "        IO::println(\"Com::abs(0-5) =\", Com::abs(neg).res, \" Com::sqrt(9) =\", Com::sqrt(9).res);\n"
     "        ALL p = Com::pow(2, 10);\n"
     "        IO::println(\"Com::pow(2,10) =\", p.res);\n"
-    "        // reference var decl (realme &perm follow type)\n"
-    "        count &w u int = 5;      // program-level(u) writable ref count, init 5 to u\n"
+    "        // reference var decl (a reference is a type: &perm follow type name)\n"
+    "        &w u int count = 5;      // program-level(u) writable ref count, init 5 to u\n"
     "        ALL rc = &r u count;     // expr smart ref: read u-layer count\n"
     "        IO::println(\"after count decl Ref::read =\", Ref::read(rc).res);\n"
     "        Ref::write(count, 8);\n"
     "        IO::println(\"after Ref::write(count,8) =\", Ref::read(rc).res);\n"
-    "        dry &r a int;            // no-init decl: same-name target, read → refuse\n"
+    "        &r a int dry;            // no-init decl: same-name target, read → refuse\n"
     "        IO::println(\"uninit decl read →\", Ref::read(dry).cause);\n"
     "        // movable perm m + Ref::move\n"
     "        ALL x = 42;\n"
@@ -478,4 +478,3 @@ int main(int argc, char **argv) {
     run_source(DEMO13);
     return 0;
 }
-
