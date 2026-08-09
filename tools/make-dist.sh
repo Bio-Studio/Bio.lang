@@ -23,7 +23,7 @@ export ZIG_LOCAL_CACHE_DIR=${ZIG_LOCAL_CACHE_DIR:-/tmp/bio-zig-local}
 
 LIB_SRC="$SRC/arena.c $SRC/lexer.c $SRC/value.c $SRC/builtin.c $SRC/parser.c \
          $SRC/interp.c $SRC/bts.c $SRC/compile.c $SRC/toml.c $SRC/project.c \
-         $SRC/platform.c"
+         $SRC/platform.c $SRC/pack.c"
 
 collect_linux_deps() {
     libdir="$1"; shift
