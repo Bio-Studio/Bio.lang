@@ -599,8 +599,10 @@ static void parse_method_annotations(Parser *p, Method *m) {
         const char *a = expect_id(p);
         if (strcmp(a, "write") == 0) m->write = 1;
         else if (strcmp(a, "read") == 0) m->read = 1;
+        else if (strcmp(a, "call") == 0) m->call = 1;
+        else if (strcmp(a, "ucall") == 0) m->ucall = 1;
         else {
-            fprintf(stderr, "syntax error: unknown method annotation @%s (only @read/@write)\n", a);
+            fprintf(stderr, "syntax error: unknown method annotation @%s (only @read/@write/@call/@ucall)\n", a);
             p->err = 1;
         }
     }

@@ -15,6 +15,8 @@ typedef struct Node Node;
 
 typedef struct VarMap VarMap;
 typedef struct Value Value;
+typedef struct BoothBlock BoothBlock;
+typedef struct BoothArena BoothArena;
 
 /* ═══════════════ Central constants (no magic numbers in code) ═══════════════ */
 #define BIO_TOKEN_MAX   4096   /* lexer token buffer */
@@ -126,7 +128,20 @@ typedef struct Method {
     int builtin;               /* non-zero = builtin implementation (e.g. B_ARS), no stmts */
     int write;                 /* @write annotation: method writes */
     int read;                  /* @read annotation: method is read-only */
+    int call;                  /* @call annotation: per-thread phone-booth execution memory */
+    int ucall;                 /* @ucall annotation: one global phone booth shared by all threads */
 } Method;
+
+/* Phone-booth arena: a fixed reusable memory region for @call/@ucall methods.
+ * in_use guards against recursion (a booth fits one caller at a time).
+ * Block layout lives in arena.c. */
+struct BoothArena {
+    const Method *method;        /* which method owns this booth */
+    BoothBlock *head;
+    BoothBlock *cur;
+    int in_use;                  /* recursion guard: set during a call */
+    struct BoothArena *next;     /* next booth in the thread/global list */
+};
 
 /* Field declaration (class/stream attributes; the original spec: every object/stream stores its own attributes) */
 typedef struct Field {
@@ -192,12 +207,20 @@ typedef struct {
     Value *arrays;       /* Arrays registry: all Array/Vector instances */
     Stream *stream_cache;        /* hot-path: last stream found by name */
     const char *stream_cache_name;
+    BoothArena *main_booths;     /* @call booths owned by the main thread */
+    BoothArena *ucall_booths;    /* @ucall booths (one per method, process-wide) */
+    BoothArena *active_booth;    /* main thread's active booth while it is running */
 } Interp;
 
 void *aalloc(size_t n);
 char *astrdup(const char *s);
 void bio_set_mem_limit(size_t bytes);
 size_t bio_mem_used(void);
+BoothArena *booth_get(BoothArena **list, const Method *m);
+void booth_reset(BoothArena *b);
+BoothArena *booth_current(void);
+void booth_set_current(BoothArena *b);
+void booth_free_list(BoothArena *list);
 /* Generic "nothing": default ref(NOTHING) when no explicit return; if treats it as false */
 #define NOTHING "nothing"
 
@@ -212,6 +235,7 @@ int ref_write(RefTarget *t, Value *v, const char **err);
 int ref_move(RefTarget *t, int delta, const char **err);
 Result *bin_request(Stream *s, const char *method, Value **args, int nargs);
 Result *bts_request(const char *method, Value **args, int nargs);
+BoothArena **bts_current_booth_list(void);
 Result *taskm_request(const char *method, Value **args, int nargs);
 Result *ref_request(const char *method, Value **args, int nargs);
 Result *time_request(const char *method, Value **args, int nargs);

@@ -129,6 +129,9 @@ Interp *interp_new(Decl *decls) {
     in->main_area.parent = &in->globals;   /* Chain: method → fields → area → globals → consts */
     in->globals.parent = &in->consts;      /* Constantstream public constants at the very top, visible globally */
     in->cur_area = &in->main_area;
+    in->main_booths = NULL;
+    in->ucall_booths = NULL;
+    in->active_booth = NULL;
     in->arrays = mk_arr(16);   /* Arrays registry: all Array/Vector instances */
     return in;
 }
@@ -192,16 +195,42 @@ Result *interp_exec_method(Interp *in, Method *m, Value **args, int nargs, VarMa
         if (!bs) bs = in->cur_stream;
         return builtin_request(bs, m->builtin, m->name, all, nargs + 1);
     }
-    VarMap scope;
-    memset(&scope, 0, sizeof(VarMap));
+    /* Phone-booth methods execute from a reusable private arena. The call
+     * resets the booth first, then every allocation made by the method body
+     * goes to the booth. Ordinary methods keep using the global arena
+     * exactly as before. Recursion is refused: a booth in use cannot be
+     * entered again (a booth fits one caller at a time). */
+    BoothArena *booth = NULL;
+    BoothArena *saved_booth = booth_current();
+    if (m->call || m->ucall) {
+        BoothArena **list;
+        if (m->ucall) list = &in->ucall_booths;
+        else {
+            list = bts_current_booth_list();
+            if (!list) list = &in->main_booths;
+        }
+        booth = booth_get(list, m);
+        if (booth->in_use) {
+            char buf[BIO_MSG_MAX];
+            snprintf(buf, sizeof buf,
+                     "refused: phone-booth method %s does not support recursion",
+                     m->name);
+            return mk_ref(astrdup(buf));
+        }
+        booth->in_use = 1;
+        booth_reset(booth);
+        booth_set_current(booth);
+    }
+    VarMap *scope = aalloc(sizeof(VarMap));
+    memset(scope, 0, sizeof(VarMap));
     if (self && (self->kind == V_OBJ || (self->kind == V_ARR && self->obj_fields))) {
         /* Scope chain: method → object/stream fields → area → globals (internal bare property reads) */
-        scope.parent = self->obj_fields;
+        scope->parent = self->obj_fields;
         self->obj_fields->parent = parent;
     } else {
-        scope.parent = parent;
+        scope->parent = parent;
     }
-    if (self) var_set(&scope, "this", self);   /* Inside an object method, this = the object itself */
+    if (self) var_set(scope, "this", self);   /* Inside an object method, this = the object itself */
     for (int i = 0; i < nargs; i++) {
         Value *a = args[i];
         /* Smart-reference argument pointing to a stream variable → bind as a stream reference
@@ -233,17 +262,19 @@ Result *interp_exec_method(Interp *in, Method *m, Value **args, int nargs, VarMa
             }
         }
     bind:
-        var_set(&scope, m->params[i], a);
+        var_set(scope, m->params[i], a);
     }
     VarMap *saved_scope = in->cur_scope;
     Stream *saved_stream = in->cur_stream;
-    in->cur_scope = &scope;
+    in->cur_scope = scope;
     /* Current stream: reverse-lookup of the this object (class/stream name; array object → Array class), for bare-call priority + internal properties */
     in->cur_stream = self ? stream_find(in, self->kind == V_ARR ? "Array" : self->obj_cls) : NULL;
     Flow fl = {0};
-    exec_stmts(in, m->stmts, m->nstmts, &scope, &fl);
+    exec_stmts(in, m->stmts, m->nstmts, scope, &fl);
     in->cur_scope = saved_scope;
     in->cur_stream = saved_stream;
+    if (booth) booth->in_use = 0;
+    booth_set_current(saved_booth);
     return fl.ret ? fl.ret : mk_ref(NOTHING);
 }
 
@@ -734,10 +765,15 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
             } else {
                 Value *v = eval_expr(in, st->expr, scope);
                 if (strcmp(st->retkind, "res") == 0) {
-                    /* res result: the responded value is a successful Result → take its inner value */
-                    if (v->kind == V_RES && v->res && !v->res->ref && v->res->res)
-                        v = v->res->res;
-                    fl->ret = mk_res(v);
+                    /* res result: the responded value is a successful Result → take its inner value.
+                     * res of a REFUSED request forwards the refusal (refusal propagation). */
+                    if (v->kind == V_RES && v->res && v->res->ref)
+                        fl->ret = mk_ref(v->res->ref);
+                    else {
+                        if (v->kind == V_RES && v->res && !v->res->ref && v->res->res)
+                            v = v->res->res;
+                        fl->ret = mk_res(v);
+                    }
                 } else {
                     /* ref result: a rejected Result is forwarded with its refusal reason */
                     if (v->kind == V_RES && v->res && v->res->ref)

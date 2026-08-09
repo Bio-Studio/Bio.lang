@@ -51,6 +51,7 @@ typedef struct BThread {
     Value **args; int nargs;
     unsigned char round_ran; /* Taskm: has already run this round */
     VarMap area;             /* the thread's own scope (followed by the `a` resolution layer) */
+    BoothArena *booths;      /* this thread's @call phone booths (one per method) */
     struct BThread *next;
 } BThread;
 
@@ -70,9 +71,17 @@ static void bts_entry(void) {
     g_interp->cur_area = &t->area;            /* thread scope: `a` resolution points here */
     t->result = interp_call_global(g_interp, t->mname, t->args, t->nargs);
     g_interp->cur_area = saved_area;
+    booth_free_list(t->booths);               /* the thread's phone booths die with it */
+    t->booths = NULL;
     t->state = 2;
     current = NULL;
     swapcontext(&t->ctx, &sched_ctx);   /* back to scheduler */
+}
+
+/* The calling thread's @call booth list (NULL for the main thread — the
+ * interpreter keeps the main thread's booths in Interp::main_booths). */
+BoothArena **bts_current_booth_list(void) {
+    return current ? &current->booths : NULL;
 }
 
 /* find a thread */
@@ -156,6 +165,7 @@ Result *bts_request(const char *method, Value **args, int nargs) {
         memset(&t->area, 0, sizeof(VarMap));
         t->area.is_area = 1;
         t->area.parent = &g_interp->globals;
+        t->booths = NULL;
         t->stack = aalloc(BIO_STACK_SIZE);
         getcontext(&t->ctx);
         t->ctx.uc_stack.ss_sp = t->stack;

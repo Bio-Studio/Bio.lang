@@ -27,6 +27,7 @@ bio shell build examples/01-hello.bio -o hello   # compile to a standalone execu
 | 13 | [13-need.bio](13-need.bio) | Assumptions: `need value/function/stream/Class` |
 | 14 | [14-binary-lib.bio](14-binary-lib.bio) | Calling native C libraries (`Stream m & "libm.so.6"`) |
 | 15 | [15-annotations.bio](15-annotations.bio) | Annotations: `@unfork`, `@onlyread`, `@read`/`@write` |
+| [16-phonebooth.bio](16-phonebooth.bio) | Phone-booth methods: `@call` (per-thread booth), `@ucall` (global booth), recursion refused |
 | proj | [project/](project/) | A complete project: `package.toml` + `src/` + `utils/` |
 
 ## Suggested learning path
