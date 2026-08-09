@@ -79,11 +79,14 @@ build() {
 
     # Launcher, dynamically linked against the shared runtime next to it.
     rpath='$ORIGIN/../lib'
-    case "$name" in macos-*) rpath='@loader_path/../lib' ;; esac
+    # main.c has a weak ref to bio_llvm_compile (LLVM backend); Mach-O needs
+    # dynamic lookup for weak undefined symbols.
+    udef=''
+    case "$name" in macos-*) rpath='@loader_path/../lib'; udef='-Wl,-undefined,dynamic_lookup' ;; esac
     if ! $ZIG cc -O2 -Isrc -target "$target" -o "$bindir/bio$exe_ext" \
-            "$SRC/main.c" -L"$libdir" -lbio -Wl,-rpath,"$rpath" -lm 2>/dev/null; then
+            "$SRC/main.c" -L"$libdir" -lbio -Wl,-rpath,"$rpath" -lm $udef 2>/dev/null; then
         $ZIG cc -O2 -Isrc -target "$target" -o "$bindir/bio$exe_ext" \
-            "$SRC/main.c" "$libdir/$lib_name" -Wl,-rpath,"$rpath"
+            "$SRC/main.c" "$libdir/$lib_name" -Wl,-rpath,"$rpath" $udef
     fi
 
     case "$name" in
