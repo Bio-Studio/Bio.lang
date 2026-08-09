@@ -3,4 +3,6 @@
 // A top-level `const` creates a program-level constant, which satisfies a
 // `need value GREETING;` declared in another file.
 
+program utils;
+
 const string GREETING = "Hello from utils/";

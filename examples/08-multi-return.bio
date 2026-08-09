@@ -29,24 +29,24 @@ Class Hero {
 Main {
     void exec() {
         ALL r = M::add(3, 4);
-        IO::println("add(3,4) =", r.res);
+        CIO::println("add(3,4) =", get r);
 
         ALL g = M::greet("TAK");
-        IO::println("greet =", g.res);
+        CIO::println("greet =", get g);
 
         // `res a, b, c;` responds with several values at once; they arrive
         // as a raw array, which prints as [ ... ].
-        ALL t = M::triple(10).res;
-        IO::println("triple(10) =", t);
+        ALL t = get M::triple(10);
+        CIO::println("triple(10) =", t);
 
         // For element access and methods, use an Array object:
         ALL arr = new Array(3);
         arr::set(0, 10); arr::set(1, 20); arr::set(2, 30);
-        IO::println("arr =", arr, " arr[1] =", arr[1], " len =", arr::len().res);
+        CIO::println("arr =", arr, " arr[1] =", arr[1], " len =", get arr::len());
 
         // A method can also return a string[].
-        ALL ts = Hero::titles().res;
-        IO::println("titles =", ts);
+        ALL ts = get Hero::titles();
+        CIO::println("titles =", ts);
     }
 }
 

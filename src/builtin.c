@@ -1,5 +1,6 @@
 #include "bio.h"
 #include "platform.h"
+#include <string.h>
 
 /* ═══════════════ Builtin streams ═══════════════
  * CIO —— Console
@@ -14,7 +15,7 @@ static const char *arg_str(Value **args, int n, int i, const char *dflt) {
     Value *v = arg(args, n, i);
     if (!v) return dflt;
     if (v->kind == V_STR) return v->str;
-    if (v->kind == V_NUM) { static char b[32]; snprintf(b, sizeof b, "%g", v->num); return b; }
+    if (v->kind == V_NUM) { static char b[BIO_NUM_BUF]; snprintf(b, sizeof b, "%g", v->num); return b; }
     return dflt;
 }
 
@@ -57,7 +58,7 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
     /* Text stream: getln reads a line of text; get reads one character; readInt/readNumber read numeric values */
     if (strcmp(method, "getln") == 0 || strcmp(method, "readln") == 0 || strcmp(method, "readInt") == 0 ||
         strcmp(method, "readNumber") == 0) {
-        char buf[512];
+        char buf[BIO_STR_MAX];
         if (nargs > 0) {
             /* Prompt argument: successful Result auto-unwraps for display (res(x) → x) */
             if (args[0]->kind == V_RES && args[0]->res && !args[0]->res->ref)
@@ -95,63 +96,60 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
  * first open the "current file" stream with FIO::open(path, mode), then
  *   text stream: print/println write / get/getln read; byte stream: write writes / read reads
  */
-static FILE *fio_cur = NULL;
-static int fio_cur_writable = 0;   /* whether the current file allows writing */
-
-static Result *fio_request(const char *method, Value **args, int nargs) {
+static Result *fio_request(Stream *s, const char *method, Value **args, int nargs) {
     if (strcmp(method, "open") == 0) {
         const char *path = arg_str(args, nargs, 0, "");
         const char *mode = arg_str(args, nargs, 1, "r");
-        if (fio_cur) { fclose(fio_cur); fio_cur = NULL; }
-        fio_cur = fopen(path, mode);
-        if (!fio_cur) {
-            char buf[256];
+        if (s->fio_fp) { fclose((FILE *)s->fio_fp); s->fio_fp = NULL; }
+        s->fio_fp = fopen(path, mode);
+        if (!s->fio_fp) {
+            char buf[BIO_MSG_MAX];
             snprintf(buf, sizeof buf, "FIO refused: cannot open file %s (mode %s)", path, mode);
             return mk_ref(astrdup(buf));
         }
-        fio_cur_writable = mode[0] == 'w' || mode[0] == 'a';
+        s->fio_writable = mode[0] == 'w' || mode[0] == 'a';
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "close") == 0) {
-        if (fio_cur) { fclose(fio_cur); fio_cur = NULL; }
+        if (s->fio_fp) { fclose((FILE *)s->fio_fp); s->fio_fp = NULL; }
         return mk_res(mk_str(""));
     }
     /* ---- IO core methods (file implementation): write the current file ---- */
     if (strcmp(method, "write") == 0 || strcmp(method, "print") == 0 ||
         strcmp(method, "println") == 0) {
-        if (!fio_cur || !fio_cur_writable)
+        if (!s->fio_fp || !s->fio_writable)
             return mk_ref("FIO refused: no writable file open (use FIO::open(path, \"w\") first)");
         for (int i = 0; i < nargs; i++) {
-            if (i) fputc(' ', fio_cur);
+            if (i) fputc(' ', (FILE *)s->fio_fp);
             Value *v = args[i];
             if (v->kind == V_RES && v->res && !v->res->ref) v = v->res->res;   /* auto-unwrap */
-            if (v->kind == V_STR) fputs(v->str, fio_cur);
-            else if (v->kind == V_NUM) { char b[32]; snprintf(b, sizeof b, "%g", v->num); fputs(b, fio_cur); }
+            if (v->kind == V_STR) fputs(v->str, (FILE *)s->fio_fp);
+            else if (v->kind == V_NUM) { char b[32]; snprintf(b, sizeof b, "%g", v->num); fputs(b, (FILE *)s->fio_fp); }
         }
-        if (strcmp(method, "println") == 0) fputc('\n', fio_cur);
-        fflush(fio_cur);
+        if (strcmp(method, "println") == 0) fputc('\n', (FILE *)s->fio_fp);
+        fflush((FILE *)s->fio_fp);
         return mk_res(mk_str(""));
     }
     /* ---- IO core methods (file implementation): read the current file ---- */
     if (strcmp(method, "read") == 0) {
         /* Byte stream: read one raw byte (0-255); EOF returns -1 */
-        if (!fio_cur) return mk_ref("FIO refused: no file open (use FIO::open(path) first)");
-        int c = fgetc(fio_cur);
+        if (!s->fio_fp) return mk_ref("FIO refused: no file open (use FIO::open(path) first)");
+        int c = fgetc((FILE *)s->fio_fp);
         return mk_res(mk_num(c == EOF ? -1 : (double)c));
     }
     if (strcmp(method, "get") == 0) {
         /* Text stream: read one character (a single byte); EOF returns the empty string */
-        if (!fio_cur) return mk_ref("FIO refused: no file open (use FIO::open(path) first)");
-        int c = fgetc(fio_cur);
+        if (!s->fio_fp) return mk_ref("FIO refused: no file open (use FIO::open(path) first)");
+        int c = fgetc((FILE *)s->fio_fp);
         if (c == EOF) return mk_res(mk_str(""));
         char b[2] = { (char)c, 0 };
         return mk_res(mk_str(astrdup(b)));
     }
     if (strcmp(method, "getln") == 0 || strcmp(method, "readln") == 0) {
         /* Text stream: read one line */
-        if (!fio_cur) return mk_ref("FIO refused: no file open (use FIO::open(path) first)");
-        char buf[1024];
-        if (!fgets(buf, sizeof buf, fio_cur)) return mk_res(mk_str(""));
+        if (!s->fio_fp) return mk_ref("FIO refused: no file open (use FIO::open(path) first)");
+        char buf[BIO_PATH_MAX];
+        if (!fgets(buf, sizeof buf, (FILE *)s->fio_fp)) return mk_res(mk_str(""));
         size_t len = strlen(buf);
         while (len && (buf[len-1] == '\n' || buf[len-1] == '\r')) buf[--len] = 0;
         return mk_res(mk_str(astrdup(buf)));
@@ -160,7 +158,7 @@ static Result *fio_request(const char *method, Value **args, int nargs) {
         const char *path = arg_str(args, nargs, 0, "");
         FILE *f = fopen(path, "r");
         if (!f) return mk_ref("FIO refused: cannot open file (missing or no permission)");
-        char buf[4096]; size_t total = 0; char *out = aalloc(1); out[0] = 0;
+        char buf[BIO_READ_BUF]; size_t total = 0; char *out = aalloc(1); out[0] = 0;
         while (fgets(buf, sizeof buf, f)) {
             size_t l = strlen(buf);
             char *n2 = aalloc(total + l + 1);
@@ -203,8 +201,8 @@ static char *s_dup_range(const char *s, int start, int end) {
  * Besides string tool methods, implements the IO core methods (println/print/write/read/readln):
  * writes/reads a single in-memory string buffer (SIO's "file" is this string).
  */
-#define SIO_BUF_SIZE 8192
-static char sio_buf[SIO_BUF_SIZE];
+#define BIO_SIO_BUF 8192
+static char sio_buf[BIO_SIO_BUF];
 static int sio_len = 0;
 static int sio_head = 0;
 
@@ -213,21 +211,21 @@ static void sio_append_arg(Value *v) {
     if (v->kind == V_RES && v->res && !v->res->ref) v = v->res->res;
     if (v->kind == V_STR) {
         int l = (int)strlen(v->str);
-        if (sio_len + l < SIO_BUF_SIZE) { memcpy(sio_buf + sio_len, v->str, l); sio_len += l; sio_buf[sio_len] = 0; }
+        if (sio_len + l < BIO_SIO_BUF) { memcpy(sio_buf + sio_len, v->str, l); sio_len += l; sio_buf[sio_len] = 0; }
     } else if (v->kind == V_NUM) {
         char b[32]; snprintf(b, sizeof b, "%g", v->num);
         int l = (int)strlen(b);
-        if (sio_len + l < SIO_BUF_SIZE) { memcpy(sio_buf + sio_len, b, l); sio_len += l; sio_buf[sio_len] = 0; }
+        if (sio_len + l < BIO_SIO_BUF) { memcpy(sio_buf + sio_len, b, l); sio_len += l; sio_buf[sio_len] = 0; }
     }
 }
 
 static void sio_append_str(const char *s) {
     int l = (int)strlen(s);
-    if (sio_len + l < SIO_BUF_SIZE) { memcpy(sio_buf + sio_len, s, l); sio_len += l; sio_buf[sio_len] = 0; }
+    if (sio_len + l < BIO_SIO_BUF) { memcpy(sio_buf + sio_len, s, l); sio_len += l; sio_buf[sio_len] = 0; }
 }
 
 static void sio_append_nl(void) {
-    if (sio_len + 1 < SIO_BUF_SIZE) { sio_buf[sio_len++] = '\n'; sio_buf[sio_len] = 0; }
+    if (sio_len + 1 < BIO_SIO_BUF) { sio_buf[sio_len++] = '\n'; sio_buf[sio_len] = 0; }
 }
 
 static Result *sio_request(const char *method, Value **args, int nargs) {
@@ -273,6 +271,11 @@ static Result *sio_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "content") == 0) {
         if (sio_head >= sio_len) return mk_res(mk_str(""));
         return mk_res(mk_str(s_dup_range(sio_buf, sio_head, sio_len)));
+    }
+    if (strcmp(method, "buf") == 0) {
+        /* The whole buffer content, including already-consumed bytes. */
+        if (sio_len == 0) return mk_res(mk_str(""));
+        return mk_res(mk_str(s_dup_range(sio_buf, 0, sio_len)));
     }
     if (strcmp(method, "clear") == 0) { sio_len = 0; sio_head = 0; return mk_res(mk_str("")); }
     if (strcmp(method, "format") == 0) {   /* hand-written %d %i %s %f substitution */
@@ -339,7 +342,7 @@ static Result *sio_request(const char *method, Value **args, int nargs) {
         out[oi] = 0;
         return mk_res(mk_str(astrdup(out)));
     }
-    return mk_ref("SIO refused: no such method (IO: println/print/write/read/readln/content/clear; tools: format/length/upper/lower/trim/contains/substring/replace)");
+    return mk_ref("SIO refused: no such method (IO: println/print/write/read/readln/content/buf/clear; tools: format/length/upper/lower/trim/contains/substring/replace)");
 }
 
 /* ---------- Array: array stream ---------- */
@@ -505,9 +508,9 @@ Result *obj_request(const char *method, Value **args, int nargs) {
             var_set(o->obj_fields, cls->fields[i].name, field_default(cls->fields[i].type));
         Method *init = class_method(cls, "__init__");
         if (init) {
-            Result *r = interp_exec_method(in, init, args + 1, nargs - 1, o->obj_fields, o);
+            Result *r = interp_exec_method(in, init, args + 1, nargs - 1, in->cur_area, o);
             if (r->ref && strcmp(r->ref, NOTHING) != 0) {   /* ref(nothing) = implicit completion */
-                char buf[256];
+                char buf[BIO_MSG_MAX];
                 snprintf(buf, sizeof buf, "Obj refused: __init__ refused (%s)", r->ref);
                 return mk_ref(astrdup(buf));
             }
@@ -520,7 +523,7 @@ Result *obj_request(const char *method, Value **args, int nargs) {
         if (nargs < 2 || args[1]->kind != V_STR) return mk_ref("Obj refused: get requires a property name");
         Value *f = var_get_layer(o->obj_fields, args[1]->str);
         if (!f) {
-            char buf[256];
+            char buf[BIO_MSG_MAX];
             snprintf(buf, sizeof buf, "Obj refused: property %s was washed away", args[1]->str);
             return mk_ref(astrdup(buf));
         }
@@ -542,12 +545,12 @@ Result *obj_request(const char *method, Value **args, int nargs) {
         Decl *cls = find_class(in, clsname);
         Method *m = cls ? class_method(cls, args[1]->str) : NULL;
         if (!m) {
-            char buf[256];
+            char buf[BIO_MSG_MAX];
             snprintf(buf, sizeof buf, "Obj refused: class %s has no method %s", clsname, args[1]->str);
             return mk_ref(astrdup(buf));
         }
         if (o->kind == V_OBJ) o->obj_fields->parent = in->cur_area;
-        Result *r = interp_exec_method(in, m, args + 2, nargs - 2, o->kind == V_OBJ ? o->obj_fields : in->cur_area, o);
+        Result *r = interp_exec_method(in, m, args + 2, nargs - 2, in->cur_area, o);
         if (r->ref && strcmp(r->ref, NOTHING) != 0) return mk_ref(r->ref);
         if (r->ref) return mk_res(mk_str(""));      /* implicit completion → success with no value */
         return mk_res(r->res);
@@ -634,7 +637,7 @@ Result *time_request(const char *method, Value **args, int nargs) {
 
 /* ---------- Rem: Remstream memory stream (persists to memory by default; can save/load) ---------- */
 typedef struct { const char *key; Value *val; } Mem;
-static Mem mems[256];
+static Mem mems[BIO_MEM_MAX];
 static int nmem = 0;
 
 Result *rem_request(const char *method, Value **args, int nargs) {
@@ -685,74 +688,75 @@ Result *const_request(const char *method, Value **args, int nargs) {
 }
 
 /* ---------- Ref: smart reference (&permission follow target name) ---------- */
-/* Follow layers (per the spec): u program level (Unistream) / f method level (Functionstream) / a scope level (Areastream) */
+/* Follow layers: u program / f method / a area / t thread (same thread layer as a) */
 VarMap *ref_layer_get(Interp *in, const char *follow) {
     if (strcmp(follow, "u") == 0) return &in->globals;
-    if (strcmp(follow, "a") == 0) return in->cur_area;
+    if (strcmp(follow, "a") == 0 || strcmp(follow, "t") == 0) return in->cur_area;
     return in->cur_scope;                                    /* f = current method */
 }
 
 Result *ref_request(const char *method, Value **args, int nargs) {
     if (nargs < 1 || args[0]->kind != V_REF)
-        return mk_ref("Ref refused: requires a reference object (&perm follow name)");
+        return mk_ref("Ref refused: requires a reference object (&perm follow type)");
     Value *ref = args[0];
-    Interp *in = g_interp;
     const char *perm = ref->ref_perm;
     const char *follow = ref->ref_follow;
-    if (!(strcmp(perm, "r") == 0 || strcmp(perm, "w") == 0 ||
-          strcmp(perm, "rw") == 0 || strcmp(perm, "m") == 0))
-        return mk_ref("Ref refused: invalid reference permission (should be r/w/rw/m)");
-    if (!(strcmp(follow, "u") == 0 || strcmp(follow, "f") == 0 || strcmp(follow, "a") == 0))
-        return mk_ref("Ref refused: invalid reference follow (should be u/f/a)");
-    VarMap *layer = ref_layer_get(in, follow);
+    if (!(strcmp(perm, "r") == 0 || strcmp(perm, "w") == 0 || strcmp(perm, "m") == 0 ||
+          strcmp(perm, "rw") == 0 || strcmp(perm, "rm") == 0 || strcmp(perm, "wm") == 0 ||
+          strcmp(perm, "rwm") == 0))
+        return mk_ref("Ref refused: invalid reference permission (stack of r/w/m: r, w, m, rw, rm, wm, rwm)");
+    if (!(strcmp(follow, "u") == 0 || strcmp(follow, "f") == 0 ||
+          strcmp(follow, "a") == 0 || strcmp(follow, "t") == 0))
+        return mk_ref("Ref refused: invalid reference follow (should be u/f/a/t)");
 
     if (strcmp(method, "read") == 0) {
-        if (strcmp(perm, "w") == 0)
+        if (!strchr(perm, 'r'))
             return mk_ref("Ref refused: reference is write-only, cannot read");
-        Value *v = var_get_layer(layer, ref->ref_name);
-        if (!v) {
-            char buf[256];
-            snprintf(buf, sizeof buf, "Ref refused: target %s does not exist (%s layer)", ref->ref_name, follow);
-            return mk_ref(astrdup(buf));
-        }
+        const char *err = NULL;
+        Value *v = ref_read(ref->ref_tgt, &err);
+        if (!v) return mk_ref(astrdup(err ? err : "Ref refused: cannot read target"));
         return mk_res(v);
     }
     if (strcmp(method, "write") == 0) {
-        if (strcmp(perm, "r") == 0)
+        if (!strchr(perm, 'w'))
             return mk_ref("Ref refused: reference is read-only, cannot write");
         if (nargs < 2) return mk_ref("Ref refused: write requires a value argument");
-        var_set(layer, ref->ref_name, args[1]);
+        const char *err = NULL;
+        if (ref_write(ref->ref_tgt, args[1], &err) != 0)
+            return mk_ref(astrdup(err ? err : "Ref refused: cannot write target"));
         return mk_res(mk_str(""));
     }
     if (strcmp(method, "move") == 0) {
-        /* Moveable (m permission): take the target from its layer and return its value */
-        if (strcmp(perm, "m") != 0)
-            return mk_ref("Ref refused: move requires movable permission (m)");
-        Value *v = var_get_layer(layer, ref->ref_name);
-        if (!v) {
-            char buf[256];
-            snprintf(buf, sizeof buf, "Ref refused: target %s does not exist (%s layer)", ref->ref_name, follow);
-            return mk_ref(astrdup(buf));
-        }
-        var_del(layer, ref->ref_name);           /* take it away (washed away) */
-        return mk_res(v);
+        /* Moveable (m permission): advance the pointer by one, like C's a++ */
+        if (!strchr(perm, 'm'))
+            return mk_ref("Ref refused: moving the pointer requires m permission");
+        const char *err = NULL;
+        if (ref_move(ref->ref_tgt, 1, &err) != 0)
+            return mk_ref(astrdup(err ? err : "Ref refused: pointer move failed"));
+        return mk_res(mk_str(""));
     }
-    if (strcmp(method, "target") == 0)
-        return mk_res(mk_str(ref->ref_name));
+    if (strcmp(method, "target") == 0) {
+        char buf[BIO_NAME_MAX];
+        RefTarget *t = ref->ref_tgt;
+        if (t && t->kind == 0) snprintf(buf, sizeof buf, "%s", t->name);
+        else if (t && t->kind == 1) snprintf(buf, sizeof buf, "[%d]", t->index);
+        else if (t && t->kind == 2) snprintf(buf, sizeof buf, ".%s", t->name);
+        else snprintf(buf, sizeof buf, "?");
+        return mk_res(mk_str(astrdup(buf)));
+    }
     if (strcmp(method, "perm") == 0)
         return mk_res(mk_str(perm));
     return mk_ref("Ref refused: no such method (read/write/move/target/perm)");
 }
 
 /* ---------- Binary library stream (B_BIN): dlsym calls ---------- */
-#include <dlfcn.h>
 
 /* Binary functions are all called as double(*)(double,...) (x86-64 SysV: double args go in xmm0-7, return value in xmm0) */
 typedef double (*bin_fn)(double, double, double, double, double, double);
 
 Result *bin_request(Stream *s, const char *method, Value **args, int nargs) {
     if (!s->dl) return mk_ref("binary stream refused: library not loaded");
-    bin_fn fn = (bin_fn)dlsym(s->dl, method);
+    bin_fn fn = (bin_fn)bio_dlsym(s->dl, method);
     if (!fn) return mk_ref("binary stream refused: no such symbol in library (or not a function)");
     if (nargs > 6) return mk_ref("binary stream refused: at most 6 arguments supported");
     double a[6] = {0};
@@ -800,22 +804,18 @@ static Result *com_request(const char *method, Value **args, int nargs) {
     return mk_ref("Com refused: no such method (abs/min/max/pow/sqrt/floor/ceil/round/sign/sin/cos/tan/log/exp)");
 }
 
-/* ---------- IO: IOStream (present by default; can read and output) ----------
- * parent stream, aggregating CIO (console) / FIO (file) / SIO (string), dispatching to each in order */
+/* ---------- IO: IOStream — abstract parent ----------
+ * IO itself carries no functionality; CIO (console) / FIO (file) / SIO (string)
+ * are the real implementations. */
 static Result *io_request(const char *method, Value **args, int nargs) {
-    Result *r = cio_request(method, args, nargs);
-    if (!r->ref) return r;
-    r = fio_request(method, args, nargs);
-    if (!r->ref) return r;
-    r = sio_request(method, args, nargs);
-    if (!r->ref) return r;
-    return mk_ref("IO refused: no such method (aggregates CIO/FIO/SIO)");
+    (void)method; (void)args; (void)nargs;
+    return mk_ref("IO refused: IO is an abstract stream — use CIO, FIO or SIO");
 }
 
-Result *builtin_request(int kind, const char *method, Value **args, int nargs) {
+Result *builtin_request(Stream *s, int kind, const char *method, Value **args, int nargs) {
     switch (kind) {
         case B_CIO: return cio_request(method, args, nargs);
-        case B_FIO: return fio_request(method, args, nargs);
+        case B_FIO: return fio_request(s, method, args, nargs);
         case B_SIO: return sio_request(method, args, nargs);
         case B_SOLID: return solid_request(method, args, nargs);
         case B_ARRAYS: return arrays_request(method, args, nargs);

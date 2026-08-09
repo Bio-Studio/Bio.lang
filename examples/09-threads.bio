@@ -26,15 +26,15 @@ Calc Worker {
 Main {
     void exec() {
         // Spawn two threads running the bare methods "factorial" and "countUp".
-        ALL t1 = Threads::spawn("factorial", 10).res;
-        ALL t2 = Threads::spawn("countUp", 5).res;
-        IO::println("live threads:", Threads::active().res);
+        ALL t1 = get Threads::spawn("factorial", 10);
+        ALL t2 = get Threads::spawn("countUp", 5);
+        CIO::println("live threads:", get Threads::active());
 
         // Join waits for each thread and fetches its res/ref.
         ALL r1 = Threads::join(t1);
-        IO::println("thread", t1, " 10! =", r1.res);
+        CIO::println("thread", t1, " 10! =", get r1);
         ALL r2 = Threads::join(t2);
-        IO::println("thread", t2, " countUp =", r2.res);
+        CIO::println("thread", t2, " countUp =", get r2);
     }
 }
 

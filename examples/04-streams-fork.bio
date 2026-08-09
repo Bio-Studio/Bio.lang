@@ -17,7 +17,7 @@ Stream Calc {
 // 2. Fork: `MyCalc` implements `Calc`.
 Calc MyCalc {
     int add(a int, b int) { res a + b; }
-    int div(a int, b int) { cause "division by zero"; }
+    int div(a int, b int) { ref "division by zero"; }
 }
 
 // 3. A fork can carry its own fields (state), read/written via this::.
@@ -44,16 +44,16 @@ Main {
         // Calling a forked stream by its signature name falls back to the
         // forked implementation.
         ALL r = Calc::add(2, 3);
-        IO::println("Calc::add(2,3) =", r.res);
+        CIO::println("Calc::add(2,3) =", get r);
 
         // Bare calls are resolved globally.
         ALL b = add(10, 20);
-        IO::println("bare add(10,20) =", b.res);
+        CIO::println("bare add(10,20) =", get b);
 
         // Field state with this::
         C::reset();
         C::bump(); C::bump(); C::bump();
-        IO::println("count =", C::get().res, " doubleGet =", C::doubleGet().res);
+        CIO::println("count =", get C::get(), " doubleGet =", get C::doubleGet());
 
         // Passing a stream reference (CIO) as an argument.
         G::greet(CIO);

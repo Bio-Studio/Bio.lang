@@ -28,6 +28,9 @@ int bio_mkdir_p(const char *path);
 /* Recursively copy the CONTENTS of src into dst (like `cp -r src/. dst/`). */
 int bio_copy_tree(const char *src, const char *dst);
 
+/* Copy one file (binary-safe). */
+int bio_copy_file(const char *src, const char *dst);
+
 /* Recursively remove a directory tree (like `rm -rf`); tolerates missing. */
 int bio_rm_tree(const char *path);
 
@@ -41,5 +44,13 @@ const char *bio_home(void);
 
 /* Switch stdin to binary mode on Windows (no-op elsewhere). */
 void bio_stdin_binary(void);
+
+/* Dynamic library loading (dlopen/dlsym/dlclose on POSIX; LoadLibrary/
+ * GetProcAddress on Windows). Returns NULL on failure; bio_dlerror() gives a
+ * human-readable message (NULL when the last call succeeded). */
+void *bio_dlopen(const char *path);
+void *bio_dlsym(void *handle, const char *name);
+void bio_dlclose(void *handle);
+const char *bio_dlerror(void);
 
 #endif /* BIO_PLATFORM_H */

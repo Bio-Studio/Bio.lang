@@ -11,7 +11,7 @@ const path = require('path');
 const STREAMS = {
   CIO: [
     /* Text streams: println/print write text, get/getln read text */
-    { name: 'println',   detail: 'CIO::println(...) — outputs args (space-separated) and a newline',   doc: 'text stream; e.g. `CIO::println("3 + 4 =", r.res);`' },
+    { name: 'println',   detail: 'CIO::println(...) — outputs args (space-separated) and a newline',   doc: 'text stream; e.g. `CIO::println("3 + 4 =", get r);`' },
     { name: 'print',     detail: 'CIO::print(...) — outputs args without a newline',               doc: 'text stream; e.g. `CIO::print("please wait...");`' },
     { name: 'get',       detail: 'CIO::get() — read one character (text stream)',                doc: 'text stream; empty string on EOF' },
     { name: 'getln',     detail: 'CIO::getln(prompt?) — read one line (text stream)',          doc: 'text stream; e.g. `ALL line = CIO::getln("name: ");`' },
@@ -49,7 +49,8 @@ const STREAMS = {
     { name: 'write',    detail: 'SIO::write(...) — write raw bytes to the buffer', doc: 'byte stream' },
     { name: 'read',     detail: 'SIO::read() — read one raw byte 0-255',  doc: 'byte stream; -1 when empty' },
     /* Buffer utilities */
-    { name: 'content',  detail: 'SIO::content() — read remaining buffer (non-consuming)', doc: 'e.g. `SIO::content().res`' },
+    { name: 'content',  detail: 'SIO::content() — read remaining buffer (non-consuming)', doc: 'e.g. `get SIO::content()`' },
+    { name: 'buf',      detail: 'SIO::buf() — whole buffer content, including consumed bytes (non-consuming)', doc: 'e.g. `get SIO::buf()`' },
     { name: 'clear',    detail: 'SIO::clear() — clear the buffer',              doc: 'e.g. `SIO::clear();`' },
     /* String utilities */
     { name: 'format',    detail: 'SIO::format(fmt, ...) — format a string (%d %s %f)',   doc: 'e.g. `ALL s = SIO::format("%d + %d = %d", 2, 3, 5);`' },
@@ -62,75 +63,75 @@ const STREAMS = {
     { name: 'replace',   detail: 'SIO::replace(str, old, new) — replace',                 doc: '`SIO::replace("a-b", "-", "+")` → a+b' }
   ],
   Threads: [
-    { name: 'spawn',  detail: 'Threads::spawn("method", args...) — create a thread, returns its id', doc: 'e.g. `ALL t = Threads::spawn("factorial", 10).res;`' },
+    { name: 'spawn',  detail: 'Threads::spawn("method", args...) — create a thread, returns its id', doc: 'e.g. `ALL t = get Threads::spawn("factorial", 10);`' },
     { name: 'yield',  detail: 'Threads::yield() — yield the CPU, schedule other threads', doc: 'cooperative thread switch' },
-    { name: 'join',   detail: 'Threads::join(threadId) — wait for a thread and take its result', doc: 'e.g. `ALL r = Threads::join(t);` → r.res' },
-    { name: 'active', detail: 'Threads::active() — number of live threads', doc: 'e.g. `Threads::active().res`' },
-    { name: 'self',   detail: 'Threads::self() — current thread id (main = 0)', doc: 'e.g. `Threads::self().res`' }
+    { name: 'join',   detail: 'Threads::join(threadId) — wait for a thread and take its result', doc: 'e.g. `ALL r = Threads::join(t);` → get r' },
+    { name: 'active', detail: 'Threads::active() — number of live threads', doc: 'e.g. `get Threads::active()`' },
+    { name: 'self',   detail: 'Threads::self() — current thread id (main = 0)', doc: 'e.g. `get Threads::self()`' }
   ],
   Taskm: [
-    { name: 'add',      detail: 'Taskm::add("method", args...) — register a task, returns its id', doc: 'e.g. `ALL t = Taskm::add("jobA", 5).res;`' },
+    { name: 'add',      detail: 'Taskm::add("method", args...) — register a task, returns its id', doc: 'e.g. `ALL t = get Taskm::add("jobA", 5);`' },
     { name: 'interval', detail: 'Taskm::interval(ms) — set the round-robin interval (default 0)', doc: 'e.g. `Taskm::interval(10);`' },
     { name: 'run',      detail: 'Taskm::run() — scheduling loop: runs all tasks round-robin until done', doc: 'automatically switches threads through the loop' },
     { name: 'stop',     detail: 'Taskm::stop() — stop the scheduling loop', doc: 'call from inside a thread, then yield' },
-    { name: 'active',   detail: 'Taskm::active() — number of unfinished tasks', doc: 'e.g. `Taskm::active().res`' }
+    { name: 'active',   detail: 'Taskm::active() — number of unfinished tasks', doc: 'e.g. `get Taskm::active()`' }
   ],
   Arrays: [
-    { name: 'count',   detail: 'Arrays::count() — number of registered Array/Vector instances', doc: 'e.g. `Arrays::count().res`' },
-    { name: 'all',     detail: 'Arrays::all() — all instances (an array of arrays)', doc: 'e.g. `ALL xs = Arrays::all().res;`' },
-    { name: 'get',     detail: 'Arrays::get(index) — the i-th instance', doc: 'e.g. `Arrays::get(0).res`' },
+    { name: 'count',   detail: 'Arrays::count() — number of registered Array/Vector instances', doc: 'e.g. `get Arrays::count()`' },
+    { name: 'all',     detail: 'Arrays::all() — all instances (an array of arrays)', doc: 'e.g. `ALL xs = get Arrays::all();`' },
+    { name: 'get',     detail: 'Arrays::get(index) — the i-th instance', doc: 'e.g. `get Arrays::get(0)`' },
     { name: 'add',     detail: 'Arrays::add(arrayObject) — register an instance (called by Array/Vector __init__)', doc: 'new Array is inserted into Arrays by default' },
     { name: 'vector',  detail: 'Arrays::vector() — dynamic array (new Vector, auto-growing push)', doc: 'e.g. `ALL v = Arrays::vector(); v::push(10);`' },
     { name: 'forget',  detail: 'Arrays::forget(arrayObject) — remove from the registry', doc: 'e.g. `Arrays::forget(v);`' }
   ],
   Solid: [
     { name: 'new',       detail: 'Solid::new() — create a contiguous stream (contiguous storage + moving head pointer)', doc: 'the underlying storage of the Array/Vector classes' },
-    { name: 'len',       detail: 'Solid::len(stream) — remaining length (head pointer to end)', doc: 'e.g. `Solid::len(s).res`' },
-    { name: 'get',       detail: 'Solid::get(stream, index) — get an element relative to the head pointer', doc: 'e.g. `Solid::get(s, 0).res`' },
+    { name: 'len',       detail: 'Solid::len(stream) — remaining length (head pointer to end)', doc: 'e.g. `get Solid::len(s)`' },
+    { name: 'get',       detail: 'Solid::get(stream, index) — get an element relative to the head pointer', doc: 'e.g. `get Solid::get(s, 0)`' },
     { name: 'set',       detail: 'Solid::set(stream, index, value) — set an element relative to the head pointer', doc: 'e.g. `Solid::set(s, 0, 42);`' },
     { name: 'push',      detail: 'Solid::push(stream, value) — append at the end', doc: 'e.g. `Solid::push(s, 10);`' },
-    { name: 'pop',       detail: 'Solid::pop(stream) — pop from the end', doc: 'e.g. `Solid::pop(s).res`' },
-    { name: 'read',      detail: 'Solid::read(stream) — read at the head pointer and advance it', doc: 'e.g. `Solid::read(s).res`' },
-    { name: 'peek',      detail: 'Solid::peek(stream) — read at the head pointer without moving', doc: 'e.g. `Solid::peek(s).res`' },
-    { name: 'head',      detail: 'Solid::head(stream) — current head pointer position', doc: 'e.g. `Solid::head(s).res`' },
+    { name: 'pop',       detail: 'Solid::pop(stream) — pop from the end', doc: 'e.g. `get Solid::pop(s)`' },
+    { name: 'read',      detail: 'Solid::read(stream) — read at the head pointer and advance it', doc: 'e.g. `get Solid::read(s)`' },
+    { name: 'peek',      detail: 'Solid::peek(stream) — read at the head pointer without moving', doc: 'e.g. `get Solid::peek(s)`' },
+    { name: 'head',      detail: 'Solid::head(stream) — current head pointer position', doc: 'e.g. `get Solid::head(s)`' },
     { name: 'resetHead', detail: 'Solid::resetHead(stream) — reset the head pointer to zero', doc: 'e.g. `Solid::resetHead(s);`' },
     { name: 'clear',     detail: 'Solid::clear(stream) — clear', doc: 'e.g. `Solid::clear(s);`' },
-    { name: 'join',      detail: 'Solid::join(stream, sep?) — join remaining data into a string', doc: 'e.g. `Solid::join(s, "-").res`' }
+    { name: 'join',      detail: 'Solid::join(stream, sep?) — join remaining data into a string', doc: 'e.g. `get Solid::join(s, "-")`' }
   ],
   Ref: [
-    { name: 'read',   detail: 'Ref::read(ref) — read the reference target (r/rw/m permission)', doc: 'e.g. `ALL v = Ref::read(rr).res;`' },
+    { name: 'read',   detail: 'Ref::read(ref) — read the reference target (r/rw/m permission)', doc: 'e.g. `ALL v = get Ref::read(rr);`' },
     { name: 'write',  detail: 'Ref::write(ref, value) — write the reference target (w/rw/m permission)', doc: 'e.g. `Ref::write(wr, 10);`' },
     { name: 'move',   detail: 'Ref::move(ref) — take the target (movable m permission only)', doc: 'e.g. `ALL taken = Ref::move(mv);` → target washed away' },
-    { name: 'target', detail: 'Ref::target(ref) — target name', doc: 'e.g. `Ref::target(rr).res` → counter' },
-    { name: 'perm',   detail: 'Ref::perm(ref) — permission (r/w/rw/m)', doc: 'e.g. `Ref::perm(rr).res`' }
+    { name: 'target', detail: 'Ref::target(ref) — target name', doc: 'e.g. `get Ref::target(rr)` → counter' },
+    { name: 'perm',   detail: 'Ref::perm(ref) — permission (r/w/rw/m)', doc: 'e.g. `get Ref::perm(rr)`' }
   ],
   Com: [
-    { name: 'abs',    detail: 'Com::abs(x) — absolute value', doc: 'e.g. `Com::abs(0-5).res` → 5' },
-    { name: 'min',    detail: 'Com::min(x, y) — smaller of the two', doc: 'e.g. `Com::min(3, 5).res` → 3' },
-    { name: 'max',    detail: 'Com::max(x, y) — larger of the two', doc: 'e.g. `Com::max(3, 5).res` → 5' },
-    { name: 'pow',    detail: 'Com::pow(x, y) — x raised to the power y', doc: 'e.g. `Com::pow(2, 10).res` → 1024' },
-    { name: 'sqrt',   detail: 'Com::sqrt(x) — square root (refused for negatives)', doc: 'e.g. `Com::sqrt(9).res` → 3' },
-    { name: 'floor',  detail: 'Com::floor(x) — floor', doc: 'e.g. `Com::floor(2.7).res` → 2' },
-    { name: 'ceil',   detail: 'Com::ceil(x) — ceiling', doc: 'e.g. `Com::ceil(2.1).res` → 3' },
-    { name: 'round',  detail: 'Com::round(x) — round to nearest', doc: 'e.g. `Com::round(2.5).res` → 3' },
-    { name: 'sign',   detail: 'Com::sign(x) — sign (-1/0/1)', doc: 'e.g. `Com::sign(0-3).res` → -1' },
-    { name: 'sin',    detail: 'Com::sin(x) — sine', doc: 'e.g. `Com::sin(0).res` → 0' },
-    { name: 'cos',    detail: 'Com::cos(x) — cosine', doc: 'e.g. `Com::cos(0).res` → 1' },
-    { name: 'tan',    detail: 'Com::tan(x) — tangent', doc: 'e.g. `Com::tan(0).res` → 0' },
-    { name: 'log',    detail: 'Com::log(x) — natural logarithm (refused for x≤0)', doc: 'e.g. `Com::log(1).res` → 0' },
-    { name: 'exp',    detail: 'Com::exp(x) — e raised to the power x', doc: 'e.g. `Com::exp(1).res` → e' }
+    { name: 'abs',    detail: 'Com::abs(x) — absolute value', doc: 'e.g. `get Com::abs(0-5)` → 5' },
+    { name: 'min',    detail: 'Com::min(x, y) — smaller of the two', doc: 'e.g. `get Com::min(3, 5)` → 3' },
+    { name: 'max',    detail: 'Com::max(x, y) — larger of the two', doc: 'e.g. `get Com::max(3, 5)` → 5' },
+    { name: 'pow',    detail: 'Com::pow(x, y) — x raised to the power y', doc: 'e.g. `get Com::pow(2, 10)` → 1024' },
+    { name: 'sqrt',   detail: 'Com::sqrt(x) — square root (refused for negatives)', doc: 'e.g. `get Com::sqrt(9)` → 3' },
+    { name: 'floor',  detail: 'Com::floor(x) — floor', doc: 'e.g. `get Com::floor(2.7)` → 2' },
+    { name: 'ceil',   detail: 'Com::ceil(x) — ceiling', doc: 'e.g. `get Com::ceil(2.1)` → 3' },
+    { name: 'round',  detail: 'Com::round(x) — round to nearest', doc: 'e.g. `get Com::round(2.5)` → 3' },
+    { name: 'sign',   detail: 'Com::sign(x) — sign (-1/0/1)', doc: 'e.g. `get Com::sign(0-3)` → -1' },
+    { name: 'sin',    detail: 'Com::sin(x) — sine', doc: 'e.g. `get Com::sin(0)` → 0' },
+    { name: 'cos',    detail: 'Com::cos(x) — cosine', doc: 'e.g. `get Com::cos(0)` → 1' },
+    { name: 'tan',    detail: 'Com::tan(x) — tangent', doc: 'e.g. `get Com::tan(0)` → 0' },
+    { name: 'log',    detail: 'Com::log(x) — natural logarithm (refused for x≤0)', doc: 'e.g. `get Com::log(1)` → 0' },
+    { name: 'exp',    detail: 'Com::exp(x) — e raised to the power x', doc: 'e.g. `get Com::exp(1)` → e' }
   ],
   Time: [
-    { name: 'now',      detail: 'Time::now() — monotonic clock seconds', doc: 'e.g. `Time::now().res`' },
+    { name: 'now',      detail: 'Time::now() — monotonic clock seconds', doc: 'e.g. `get Time::now()`' },
     { name: 'sleep',    detail: 'Time::sleep(ms) — sleep', doc: 'e.g. `Time::sleep(100);`' },
     { name: 'start',    detail: 'Time::start(?) — start a timer (default first timer owned by the thread)', doc: 'e.g. `Time::start();` → thread\'s first timer, cannot be reset' },
-    { name: 'fork',     detail: 'Time::fork() — fork a new timer (resettable)', doc: 'e.g. `ALL t = Time::fork(); Time::reset(t.res);`' },
-    { name: 'elapsed',  detail: 'Time::elapsed(?) — elapsed milliseconds of a timer', doc: 'e.g. `Time::elapsed().res`' },
-    { name: 'reset',    detail: 'Time::reset(id?) — reset (first timer refuses; forked timers allowed)', doc: 'e.g. `Time::reset(t.res);`' }
+    { name: 'fork',     detail: 'Time::fork() — fork a new timer (resettable)', doc: 'e.g. `ALL t = Time::fork(); Time::reset(get t);`' },
+    { name: 'elapsed',  detail: 'Time::elapsed(?) — elapsed milliseconds of a timer', doc: 'e.g. `get Time::elapsed()`' },
+    { name: 'reset',    detail: 'Time::reset(id?) — reset (first timer refuses; forked timers allowed)', doc: 'e.g. `Time::reset(get t);`' }
   ]
 };
-/* IOStream aggregates CIO/FIO/SIO (dispatched in order); Console is CIO's pre-forked implementation */
-STREAMS.IO = [...STREAMS.CIO, ...STREAMS.FIO, ...STREAMS.SIO];
+/* IOStream is the abstract parent; CIO/FIO/SIO implement; Console is CIO's pre-forked implementation */
+STREAMS.IO = [];   /* abstract: no methods of its own */
 STREAMS.Console = STREAMS.CIO;
 const BUILTIN_STREAMS = ['CIO', 'FIO', 'SIO', 'IO', 'Com', 'Time', 'Solid', 'Arrays', 'Threads', 'Taskm', 'Ref', 'Console'];
 
@@ -184,17 +185,7 @@ function parseStreams(text) {
   const map = new Map();
   const classNames = new Set();
 
-  // fork: <signature> <impl> { void m() {...} } (use brace balancing for the real block)
-  for (const m of text.matchAll(/([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*\{/g)) {
-    const sig = m[1], impl = m[2];
-    if (!known.has(sig)) continue;
-    const braceAt = m.index + m[0].length - 1;
-    const end = blockEnd(text, braceAt);
-    if (end === -1) continue;
-    const inner = text.slice(braceAt + 1, end);
-    map.set(impl, { methods: methodsIn(inner), fields: fieldsIn(inner) });
-  }
-  // a signature stream's own signature methods/fields: Stream X { void hello(); int count; }
+  // pass 1: signature streams' own methods/fields: Stream X { void hello(); int count; }
   for (const m of text.matchAll(/\bStream\s+([A-Za-z_]\w*)\s*\{/g)) {
     const braceAt = m.index + m[0].length - 1;
     const end = blockEnd(text, braceAt);
@@ -210,6 +201,25 @@ function parseStreams(text) {
     const inner = text.slice(braceAt + 1, end);
     map.set(m[1], { methods: methodsIn(inner), fields: fieldsIn(inner) });
     classNames.add(m[1]);
+  }
+
+  // pass 2: forks — <signature> <impl> { ... }, inheriting the signature's
+  // (or builtin stream's) methods/fields so completions show inherited members.
+  for (const m of text.matchAll(/([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*\{/g)) {
+    const sig = m[1], impl = m[2];
+    if (!known.has(sig) && !BUILTIN_STREAMS.includes(sig)) continue;
+    const braceAt = m.index + m[0].length - 1;
+    const end = blockEnd(text, braceAt);
+    if (end === -1) continue;
+    const inner = text.slice(braceAt + 1, end);
+    const methods = methodsIn(inner), fields = fieldsIn(inner);
+    const base = map.get(sig);
+    if (base) {
+      for (const n of base.methods) methods.add(n);
+      for (const n of base.fields) fields.add(n);
+    }
+    if (STREAMS[sig]) for (const mm of STREAMS[sig]) methods.add(mm.name);
+    map.set(impl, { methods, fields });
   }
   return { known, map, classNames };
 }
@@ -278,11 +288,9 @@ function activate(context) {
         }
       }
 
-      // already typed `object.` → suggest request-result props + class fields (v.x / r.res / r.cause)
+      // already typed `object.` → suggest class fields (request results are unwrapped with get/cause, not dot props)
       const dot = before.match(/([A-Za-z_]\w*)\.$/);
       if (dot) {
-        items.push(fieldItem('res', 'request result: value'));
-        items.push(fieldItem('cause', 'request result: refusal reason'));
         const { map } = parseStreams(text);
         const seen = new Set();
         for (const { fields } of map.values())
@@ -311,23 +319,23 @@ function activate(context) {
 
       // already typed `&` (smart-ref start) → suggest permissions r/w/rw/m
       if (before.match(/&\s*$/)) {
-        for (const p of ['r', 'w', 'rw', 'm']) {
+        for (const p of ['r', 'w', 'm', 'rw', 'rm', 'wm', 'rwm']) {
           const item = new vscode.CompletionItem(p, vscode.CompletionItemKind.Keyword);
           item.insertText = new vscode.SnippetString(`${p} `);
           item.detail = `smart-ref permission ${p}`;
-          item.documentation = 'syntax: &perm follow name, e.g. &r u counter (with Ref::read/write/move)';
+          item.documentation = 'syntax: &perm follow base, e.g. &r u int p = &x';
           items.push(item);
         }
         return items;
       }
 
-      // already typed `&r ` (after a permission) → suggest follow layers u/f/a
-      if (before.match(/&\s*(?:r|w|rw|m)\s+$/)) {
-        for (const f of ['u', 'f', 'a']) {
+      // already typed `&r ` (after a permission) → suggest follow layers u/f/a/t
+      if (before.match(/&\s*(?:r|w|m|rw|rm|wm|rwm)\s+$/)) {
+        for (const f of ['u', 'f', 'a', 't']) {
           const item = new vscode.CompletionItem(f, vscode.CompletionItemKind.Keyword);
           item.insertText = new vscode.SnippetString(`${f} `);
           item.detail = `reference follow layer ${f}`;
-          item.documentation = 'u = program level (Unistream) · f = method level (Functionstream) · a = scope level (Areastream)';
+          item.documentation = 'u = program · f = method · a = area · t = thread';
           items.push(item);
         }
         return items;
@@ -443,7 +451,7 @@ function activate(context) {
     panel.webview.postMessage({ type: 'ready' });
   });
 
-  /* Compile current file: bio -b file → self-contained executable (output into the file's directory) */
+  /* Compile current file: bio shell build file → self-contained executable (output into workspace bin/) */
   const compileFile = vscode.commands.registerCommand('biolang.compileFile', async () => {
     const doc = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
     if (!doc) { vscode.window.showWarningMessage('No file is open'); return; }
@@ -452,11 +460,11 @@ function activate(context) {
     const out = vscode.window.createOutputChannel('BioLang Compile');
     out.show(true);
     const base = doc.fileName.replace(/\.[^.]+$/, '');
-    const outBin = base;   /* strip the extension, e.g. example.bio → example */
     const cwd = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]
       ? vscode.workspace.workspaceFolders[0].uri.fsPath : path.dirname(doc.fileName);
-    out.appendLine(`$ bio -b ${doc.fileName} -o ${outBin}`);
-    execFile('bio', ['-b', doc.fileName, '-o', outBin], { cwd }, (err, stdout, stderr) => {
+    const outBin = path.join('bin', path.basename(base));   /* e.g. bin/example */
+    out.appendLine(`$ bio shell build ${doc.fileName} -o ${outBin}`);
+    execFile('bio', ['shell', 'build', doc.fileName, '-o', outBin], { cwd }, (err, stdout, stderr) => {
       if (stdout) out.append(stdout);
       if (stderr) out.append(stderr);
       if (err) {

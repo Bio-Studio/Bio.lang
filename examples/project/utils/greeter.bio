@@ -3,11 +3,13 @@
 // Any method named `greet` satisfies the `need function greet;` in main.bio.
 // It can then be called as a bare call.
 
+program utils;
+
 Stream Greeter {
     void greet(name string);
 }
 Greeter G {
     void greet(name string) {
-        IO::println("hello,", name);
+        CIO::println("hello,", name);
     }
 }

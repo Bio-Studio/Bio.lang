@@ -5,15 +5,15 @@ Each file is self-contained — run any of them with:
 
 ```bash
 bio examples/01-hello.bio          # interpret
-bio -b examples/01-hello.bio -o hello   # compile to a standalone executable
+bio shell build examples/01-hello.bio -o hello   # compile to a standalone executable
 ```
 
 ## Reading order
 
 | # | File | Teaches |
 |---|------|---------|
-| 01 | [01-hello.bio](01-hello.bio) | The basic skeleton: `program main`, `Main { void exec() }`, `IO::println` |
-| 02 | [02-requests.bio](02-requests.bio) | The request model: `res` / `cause` / `ref`, `ALL`, `.res` / `.cause` |
+| 01 | [01-hello.bio](01-hello.bio) | The basic skeleton: `program main`, `Main { void exec() }`, `CIO::println` |
+| 02 | [02-requests.bio](02-requests.bio) | The request model: `res` / `ref` / `get` / `cause`, `ALL`, prefix unwrapping |
 | 03 | [03-control-flow.bio](03-control-flow.bio) | `if` / `else if` / `else`, `while`, `for`, `break` / `continue` |
 | 04 | [04-streams-fork.bio](04-streams-fork.bio) | Signature streams, forked implementations, fields, bare calls, streams as arguments |
 | 05 | [05-io-substreams.bio](05-io-substreams.bio) | CIO / FIO / SIO / IO: text streams vs byte streams |
@@ -22,7 +22,7 @@ bio -b examples/01-hello.bio -o hello   # compile to a standalone executable
 | 08 | [08-multi-return.bio](08-multi-return.bio) | Multiple return types, `res a, b, c` → array |
 | 09 | [09-threads.bio](09-threads.bio) | Cooperative threads: `spawn` / `yield` / `join` / `active` / `self` |
 | 10 | [10-taskm.bio](10-taskm.bio) | Task manager: round-robin scheduling of tasks |
-| 11 | [11-smart-refs.bio](11-smart-refs.bio) | Smart references `&perm follow name`, `Ref::read/write/move`, const/thread variables |
+| 11 | [11-smart-refs.bio](11-smart-refs.bio) | Typed smart references `&perm follow base`, `get p` / `p = v` / `p++` moving pointer, const/thread variables |
 | 12 | [12-computation.bio](12-computation.bio) | `Com` computation stream + `Time` timers |
 | 13 | [13-need.bio](13-need.bio) | Assumptions: `need value/function/stream/Class` |
 | 14 | [14-binary-lib.bio](14-binary-lib.bio) | Calling native C libraries (`Stream m & "libm.so.6"`) |

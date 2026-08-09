@@ -13,32 +13,32 @@ Main {
         // Fixed-size array of 3 zeroes.
         ALL a = new Array(3);
         a::set(0, 10); a::set(1, 20); a::set(2, 30);
-        IO::println("array:", a);
+        CIO::println("array:", a);
 
         // Arrays can grow too.
         a::push(40);
-        IO::println("after push:", a, " len:", a::len().res);
-        IO::println("join(-):", a::join("-").res);
+        CIO::println("after push:", a, " len:", get a::len());
+        CIO::println("join(-):", get a::join("-"));
 
         // Indexed read and write with a[i].
-        IO::println("a[1] =", a[1]);
+        CIO::println("a[1] =", a[1]);
         a[1] = 99;
-        IO::println("after a[1] = 99:", a);
+        CIO::println("after a[1] = 99:", a);
 
         // Array literal: new type[n] works for base types and classes.
         int[] b = new int[4];
         for (ALL i = 0; i < 4; i = i + 1;) { b[i] = i * i; }
-        IO::println("new int[4] squares:", b);
+        CIO::println("new int[4] squares:", b);
 
         // Vector: grows freely.
         ALL v = Arrays::vector();
         v::push(10); v::push(20); v::push(30);
-        IO::println("vector:", v, " len:", v::len().res);
+        CIO::println("vector:", v, " len:", get v::len());
 
         // The Arrays collection tracks all live instances.
-        IO::println("Arrays count:", Arrays::count().res);
+        CIO::println("Arrays count:", get Arrays::count());
         Arrays::forget(v);
-        IO::println("after forget:", Arrays::count().res);
+        CIO::println("after forget:", get Arrays::count());
     }
 }
 

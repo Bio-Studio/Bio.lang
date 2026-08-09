@@ -6,12 +6,14 @@
 #if defined(_WIN32)
 #include <windows.h>
 #include <direct.h>
+#include <fcntl.h>
 #include <io.h>
 #else
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <dirent.h>
+#include <dlfcn.h>
 #include <time.h>
 #endif
 
@@ -118,14 +120,14 @@ int bio_mkdir_p(const char *path) {
 
 int bio_walk_dir(const char *dir, BioWalkFn fn, void *ud) {
 #if defined(_WIN32)
-    char pat[1024];
+    char pat[BIO_PATH_MAX];
     snprintf(pat, sizeof pat, "%s/*", dir);
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA(pat, &fd);
     if (h == INVALID_HANDLE_VALUE) return 0;
     do {
         if (fd.cFileName[0] == '.') continue;
-        char p[1024];
+        char p[BIO_PATH_MAX];
         snprintf(p, sizeof p, "%s/%s", dir, fd.cFileName);
         int is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
         fn(p, is_dir, ud);
@@ -138,7 +140,7 @@ int bio_walk_dir(const char *dir, BioWalkFn fn, void *ud) {
     struct dirent *e;
     while ((e = readdir(d))) {
         if (e->d_name[0] == '.') continue;
-        char p[1024];
+        char p[BIO_PATH_MAX];
         snprintf(p, sizeof p, "%s/%s", dir, e->d_name);
         struct stat st;
         if (stat(p, &st) != 0) continue;
@@ -155,7 +157,7 @@ static int copy_file(const char *src, const char *dst) {
     if (!in) return -1;
     FILE *out = fopen(dst, "wb");
     if (!out) { fclose(in); return -1; }
-    char buf[65536];
+    char buf[BIO_COPY_BUF];
     size_t n;
     while ((n = fread(buf, 1, sizeof buf, in)) > 0) {
         if (fwrite(buf, 1, n, out) != n) { fclose(in); fclose(out); return -1; }
@@ -165,12 +167,16 @@ static int copy_file(const char *src, const char *dst) {
     return 0;
 }
 
+int bio_copy_file(const char *src, const char *dst) {
+    return copy_file(src, dst);
+}
+
 typedef struct { const char *src; const char *dst; } CopyCtx;
 
 static void copy_cb(const char *path, int is_dir, void *ud) {
     CopyCtx *c = ud;
     const char *rel = path + strlen(c->src);   /* e.g. "/sub/file" */
-    char out[1024];
+    char out[BIO_PATH_MAX];
     snprintf(out, sizeof out, "%s%s", c->dst, rel);
     if (is_dir) {
         mkdir_one(out);
@@ -218,5 +224,45 @@ void bio_stdin_binary(void) {
     _setmode(_fileno(stdin), _O_BINARY);
 #else
     /* no-op */
+#endif
+}
+
+/* ---------- dynamic libraries ---------- */
+
+void *bio_dlopen(const char *path) {
+#if defined(_WIN32)
+    return (void *)LoadLibraryA(path);
+#else
+    return dlopen(path, RTLD_LAZY | RTLD_GLOBAL);
+#endif
+}
+
+void *bio_dlsym(void *handle, const char *name) {
+#if defined(_WIN32)
+    return (void *)GetProcAddress((HMODULE)handle, name);
+#else
+    return dlsym(handle, name);
+#endif
+}
+
+void bio_dlclose(void *handle) {
+    if (!handle) return;
+#if defined(_WIN32)
+    FreeLibrary((HMODULE)handle);
+#else
+    dlclose(handle);
+#endif
+}
+
+const char *bio_dlerror(void) {
+#if defined(_WIN32)
+    static char buf[BIO_MSG_MAX];
+    DWORD err = GetLastError();
+    if (!FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                        NULL, err, 0, buf, sizeof buf, NULL))
+        snprintf(buf, sizeof buf, "Windows error %lu", (unsigned long)err);
+    return buf;
+#else
+    return dlerror();
 #endif
 }

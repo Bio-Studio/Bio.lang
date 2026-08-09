@@ -47,7 +47,7 @@
       },
       {
         "command": "biolang.compileFile",
-        "title": "BioLang: Compile current file (bio -b)"
+        "title": "BioLang: Compile current file (bio shell build)"
       },
       {
         "command": "biolang.projectInit",

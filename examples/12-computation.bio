@@ -11,27 +11,27 @@ program main;
 Main {
     void exec() {
         // Com computation stream.
-        IO::println("Com::abs(0-5) =", Com::abs(0 - 5).res,
-                     "  Com::sqrt(9) =", Com::sqrt(9).res);
-        IO::println("Com::pow(2,10) =", Com::pow(2, 10).res);
-        IO::println("Com::min(3,5) =", Com::min(3, 5).res,
-                     "  Com::max(3,5) =", Com::max(3, 5).res);
-        IO::println("Com::sign(0-3) =", Com::sign(0 - 3).res);
-        IO::println("Com::floor(2.7) =", Com::floor(2.7).res,
-                     "  Com::ceil(2.7) =", Com::ceil(2.7).res,
-                     "  Com::round(2.5) =", Com::round(2.5).res);
-        IO::println("Com::log(1) =", Com::log(1).res);
+        CIO::println("Com::abs(0-5) =", get Com::abs(0 - 5),
+                     "  Com::sqrt(9) =", get Com::sqrt(9));
+        CIO::println("Com::pow(2,10) =", get Com::pow(2, 10));
+        CIO::println("Com::min(3,5) =", get Com::min(3, 5),
+                     "  Com::max(3,5) =", get Com::max(3, 5));
+        CIO::println("Com::sign(0-3) =", get Com::sign(0 - 3));
+        CIO::println("Com::floor(2.7) =", get Com::floor(2.7),
+                     "  Com::ceil(2.7) =", get Com::ceil(2.7),
+                     "  Com::round(2.5) =", get Com::round(2.5));
+        CIO::println("Com::log(1) =", get Com::log(1));
 
         // Time::start starts the thread's first timer.
         Time::start();
         Time::sleep(50);                        // sleep 50 ms
-        IO::println("elapsed after ~50ms =", Time::elapsed().res);
+        CIO::println("elapsed after ~50ms =", get Time::elapsed());
 
         // Time::fork creates a resettable timer; the first timer refuses reset.
         ALL t2 = Time::fork();
-        IO::println("reset first timer →", Time::reset().cause);
-        Time::reset(t2.res);                    // forked timer resets fine
-        IO::println("Time::reset(forked) ok");
+        CIO::println("reset first timer →", cause Time::reset());
+        Time::reset(get t2);                    // forked timer resets fine
+        CIO::println("Time::reset(forked) ok");
     }
 }
 

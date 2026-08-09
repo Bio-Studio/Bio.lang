@@ -12,7 +12,7 @@ need function greet;      // provided by utils/greeter.bio
 Main {
     void exec() {
         // GREETING is a const declared in utils/config.bio.
-        IO::println("main entry —", GREETING);
+        CIO::println("main entry —", GREETING);
 
         // greet() is provided by utils/greeter.bio.
         greet("project");

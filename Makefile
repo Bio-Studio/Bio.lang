@@ -27,33 +27,44 @@ CFLAGS = -Wall -Wextra $(PROFILE_OPT) -Isrc $(PROFILE_CFLAGS) \
 # ---- Sources ---------------------------------------------------------------
 LIB  = src/arena.c src/lexer.c src/value.c src/builtin.c src/parser.c \
        src/interp.c src/bts.c src/compile.c src/toml.c src/project.c \
-       src/platform.c
-BIN  = bio
-OBJS = $(notdir $(LIB:.c=.o))
+       src/platform.c src/pack.c
+BUILD_DIR = bin
+BIN       = $(BUILD_DIR)/bio
+LIBBIO    = $(BUILD_DIR)/libbio.a
+OBJS      = $(addprefix $(BUILD_DIR)/,$(notdir $(LIB:.c=.o)))
 
 # ---- Build -----------------------------------------------------------------
 all: $(BIN)
 
 $(BIN): src/main.c $(LIB) src/bio.h src/platform.h
+	-mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -DBIO_HOME='"$(CURDIR)"' -o $@ src/main.c $(LIB) $(LDFLAGS)
 
 # Standalone static runtime library (optional; not used by $(BIN) or install).
-libbio.a: $(LIB) src/bio.h src/platform.h
-	$(CC) $(CFLAGS) -c $(LIB)
+$(BUILD_DIR)/%.o: src/%.c src/bio.h src/platform.h
+	-mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(LIBBIO): $(OBJS)
 	$(AR) rcs $@ $(OBJS)
-	rm -f $(OBJS)
 
 # ---- Install ---------------------------------------------------------------
 install: $(BIN)
 	install -d $(PREFIX)/bin
 	install -m 755 $(BIN) $(PREFIX)/bin/$(BIN)
 
-install-lib: libbio.a
+install-lib: $(LIBBIO)
 	install -d $(PREFIX)/lib $(PREFIX)/include
-	install -m 644 libbio.a $(PREFIX)/lib/libbio.a
+	install -m 644 $(LIBBIO) $(PREFIX)/lib/libbio.a
 	install -m 644 src/bio.h $(PREFIX)/include/bio.h
 
 # ---- Meta ------------------------------------------------------------------
+bin:
+	sh tools/make-dist.sh
+
+clean-bin:
+	-$(RM) -r bin
+
 # Print resolved settings ONLY when `info` is a goal. Shell echo can't handle
 # the embedded quotes in CFLAGS, so use $(info) gated on MAKECMDGOALS (must be
 # defined after CFLAGS, since $(info) evaluates at parse time).
@@ -76,6 +87,6 @@ profiles:
 	done
 
 clean:
-	-$(RM) $(BIN) libbio.a $(OBJS)
+	-$(RM) $(BIN) $(LIBBIO) $(OBJS)
 
-.PHONY: all install install-lib clean profiles info
+.PHONY: all install install-lib bin clean-bin clean profiles info

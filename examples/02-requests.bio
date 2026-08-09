@@ -4,11 +4,11 @@
 // Every operation is a *request*. A request is answered with
 //   res <value>;    (respond)
 // or refused with
-//   cause <reason>; (refuse)
+//   ref <reason>;    (refuse)
 //
 // Calling a method returns an `ALL` value that carries both halves:
-//   result.res    — the responded value (if not refused)
-//   result.cause  — the refusal reason (if refused)
+//   get result    — the responded value (if not refused)
+//   cause result  — the refusal reason (if refused)
 //
 // A method that never responds nor refuses is refused with the default
 // reason "nothing" (which counts as falsy in `if`).
@@ -24,32 +24,32 @@ Stream Calc {
 // A fork supplies the actual implementation.
 Calc MyCalc {
     int add(a int, b int) { res a + b; }              // respond
-    int div(a int, b int) { cause "division by zero"; }  // refuse
+    int div(a int, b int) { ref "division by zero"; }  // refuse
 }
 
 Main {
     void exec() {
-        // A successful request carries its value in .res.
+        // A successful request carries its value; get takes it.
         ALL r = MyCalc::add(3, 4);
-        IO::println("3 + 4 =", r.res);
+        CIO::println("3 + 4 =", get r);
 
-        // A refused request carries its reason in .cause.
+        // A refused request carries its reason; cause takes it.
         ALL bad = MyCalc::div(1, 0);
-        IO::println("div cause:", bad.cause);
+        CIO::println("div cause:", cause bad);
 
         // Methods that were never declared are refused too.
         ALL missing = MyCalc::sqrt(9);
-        IO::println("missing method cause:", missing.cause);
+        CIO::println("missing method cause:", cause missing);
 
-        // No explicit res/cause → default ref(nothing), which is falsy.
+        // No explicit res/ref → default ref(nothing), which is falsy.
         ALL d = noReturn();
-        IO::println("default return cause:", d.cause);
-        if (d) { IO::println("if is true"); }
-        else { IO::println("if is false (default ref nothing)"); }
+        CIO::println("default return cause:", cause d);
+        if (d) { CIO::println("if is true"); }
+        else { CIO::println("if is false (default ref nothing)"); }
     }
 
     // This method never responds or refuses.
-    int noReturn() { IO::println("(noReturn runs)"); }
+    int noReturn() { CIO::println("(noReturn runs)"); }
 }
 
 // Expected output:

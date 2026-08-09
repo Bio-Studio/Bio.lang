@@ -12,7 +12,7 @@ int is_kw(const char *s) {
 }
 
 Tok *tokenize(const char *src, int *ntok) {
-    Tok *toks = aalloc(sizeof(Tok) * 4096);
+    Tok *toks = aalloc(sizeof(Tok) * BIO_TOKEN_MAX);
     int n = 0;
     const char *p = src;
     while (*p) {
@@ -25,7 +25,7 @@ Tok *tokenize(const char *src, int *ntok) {
         }
         /* String literal */
         if (*p == '"') {
-            p++; char buf[512]; int bi = 0;
+            p++; char buf[BIO_STR_MAX]; int bi = 0;
             while (*p && *p != '"') {
                 if (*p == '\\' && p[1]) { p++; }
                 if (bi < 511) buf[bi++] = *p;
@@ -46,7 +46,7 @@ Tok *tokenize(const char *src, int *ntok) {
         if (isalpha((unsigned char)*p) || *p == '_') {
             const char *start = p;
             while (isalnum((unsigned char)*p) || *p == '_') p++;
-            char buf[128]; size_t len = p - start;
+            char buf[BIO_NAME_MAX]; size_t len = p - start;
             if (len < 128) { memcpy(buf, start, len); buf[len] = 0; }
             toks[n].kind = is_kw(buf) ? T_KW : T_ID;
             toks[n].text = astrdup(buf); n++;
@@ -61,7 +61,7 @@ Tok *tokenize(const char *src, int *ntok) {
             char b[3] = { p[0], p[1], 0 };
             toks[n].kind = T_OP; toks[n].text = astrdup(b); p += 2; n++; continue;
         }
-        if (strchr("+-*/=;,.(){}[]<>&", *p)) {
+        if (strchr("+-*/=;,.(){}[]<>&@", *p)) {
             char b[2] = { *p, 0 };
             toks[n].kind = T_OP; toks[n].text = astrdup(b); p++; n++; continue;
         }

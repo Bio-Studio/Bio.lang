@@ -28,15 +28,15 @@ Calc Worker {
 Main {
     void exec() {
         Taskm::interval(1);                     // rotate roughly every 1 ms
-        ALL t1 = Taskm::add("jobA", 5).res;
-        ALL t2 = Taskm::add("jobB", 4).res;
-        IO::println("tasks:", Taskm::active().res);
+        ALL t1 = get Taskm::add("jobA", 5);
+        ALL t2 = get Taskm::add("jobB", 4);
+        CIO::println("tasks:", get Taskm::active());
 
         Taskm::run();                           // run until both finish
-        IO::println("tasks done:", Taskm::active().res);
+        CIO::println("tasks done:", get Taskm::active());
 
-        IO::println("jobA sum =", Threads::join(t1).res);
-        IO::println("jobB 2^4 =", Threads::join(t2).res);
+        CIO::println("jobA sum =", get Threads::join(t1));
+        CIO::println("jobB 2^4 =", get Threads::join(t2));
     }
 }
 

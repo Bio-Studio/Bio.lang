@@ -81,9 +81,9 @@
   "BioLang this:: attribute read": {
     "prefix": "thisget",
     "body": [
-      "${1:this::attr}.res"
+      "get ${1:this::attr}"
     ],
-    "description": "this:: attribute read"
+    "description": "this:: attribute read (get the actual value)"
   },
   "BioLang request call": {
     "prefix": "call",
@@ -97,21 +97,21 @@
     "body": [
       "res ${1:value};"
     ],
-    "description": "Respond with a result; res X is also the prefix unwrap operator (takes an ALL's value)"
+    "description": "Respond with a result"
   },
-  "BioLang refuse (cause)": {
-    "prefix": "cause",
+  "BioLang refuse (ref)": {
+    "prefix": "ref",
     "body": [
-      "cause ${1:reason};"
+      "ref ${1:reason};"
     ],
-    "description": "Refuse a request (original syntax: cause <expr>;); cause X is also the prefix unwrap operator (takes an ALL's refusal reason)"
+    "description": "Refuse a request with a reason"
   },
-  "BioLang unwrap res": {
-    "prefix": "resop",
+  "BioLang unwrap get": {
+    "prefix": "getop",
     "body": [
-      "res ${1:request}"
+      "get ${1:request}"
     ],
-    "description": "res X prefix unwrap: X's responded value (e.g. res IO::readInt())"
+    "description": "get X prefix unwrap: X's actual returned value (e.g. get CIO::readInt())"
   },
   "BioLang unwrap cause": {
     "prefix": "causeop",
@@ -144,16 +144,16 @@
   "BioLang smart reference": {
     "prefix": "sref",
     "body": [
-      "ALL ${1:r} = &${2|r,w,rw,m|} ${3|u,f,a|} ${4:name};"
+      "&${1|r,w,m,rw,rm,wm,rwm|} ${2|u,f,a,t|} ${3:int} ${4:name} = &${5:target};"
     ],
-    "description": "Smart reference: &perm follow name (r/w/rw/m × u/f/a), with Ref::read/write/move"
+    "description": "Typed smart reference: &perm follow base name = &expr (12 types), get p / p = v / p++"
   },
   "BioLang reference variable declaration": {
     "prefix": "realme",
     "body": [
-      "&${1|r,w,rw,m|} ${2|u,f,a|} ${3:int} ${4:name}${5: = ${6:value}};"
+      "&${1|r,w,m,rw,rm,wm,rwm|} ${2|u,f,a,t|} ${3:int} ${4:name} = &${5:expr};"
     ],
-    "description": "Reference variable declaration (a reference is a type): &perm follow type name [= init]"
+    "description": "Reference variable declaration: &perm follow base type name = &expr"
   },
   "BioLang binary library stream": {
     "prefix": "bins",
@@ -167,7 +167,7 @@
   "BioLang thread (spawn)": {
     "prefix": "spawn",
     "body": [
-      "ALL ${1:t} = Threads::spawn(\"${2:method}\", ${3:args}).res;"
+      "ALL ${1:t} = get Threads::spawn(\"${2:method}\", ${3:args});"
     ],
     "description": "Create a cooperative thread (Threads::spawn/yield/join/active/self)"
   },
@@ -175,7 +175,7 @@
     "prefix": "taskm",
     "body": [
       "Taskm::interval(${1:1});",
-      "ALL ${2:t} = Taskm::add(\"${3:job}\", ${4:args}).res;",
+      "ALL ${2:t} = get Taskm::add(\"${3:job}\", ${4:args});",
       "Taskm::run();"
     ],
     "description": "Task manager: round-robins threads until done"

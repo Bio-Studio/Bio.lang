@@ -72,7 +72,7 @@ Node *parse_primary(Parser *p) {
             e = mk_node(N_CALL);
             e->qual = "Obj";
             e->mname = "new";
-            e->args = aalloc(sizeof(Node *) * 64); e->nargs = 0;
+            e->args = aalloc(sizeof(Node *) * BIO_ARGS_MAX); e->nargs = 0;
             Node *cn = mk_node(N_STR); cn->str = "Array";
             e->args[e->nargs++] = cn;
             e->args[e->nargs++] = sz;
@@ -84,7 +84,7 @@ Node *parse_primary(Parser *p) {
         e = mk_node(N_CALL);
         e->qual = "Obj";
         e->mname = "new";
-        e->args = aalloc(sizeof(Node *) * 64); e->nargs = 0;
+        e->args = aalloc(sizeof(Node *) * BIO_ARGS_MAX); e->nargs = 0;
         Node *cn = mk_node(N_STR); cn->str = cls;
         e->args[e->nargs++] = cn;
         while (!is_op(p, ")") && !p->err) {
@@ -93,11 +93,24 @@ Node *parse_primary(Parser *p) {
         }
         expect_op(p, ")");
     }
-    else if (t->kind == T_KW && (strcmp(t->text, "res") == 0 || strcmp(t->text, "cause") == 0)) {
-        /* res X / cause X — prefix extraction operator (original spec: res add(a,b) takes the result, cause add(a,b) takes the refusal reason) */
+    else if (t->kind == T_KW && strcmp(t->text, "cause") == 0) {
+        /* cause X — prefix extraction: the reason a request was refused */
         Node *u = mk_node(N_UNWRAP);
-        u->op = t->text;          /* "res" / "cause" */
+        u->op = t->text;          /* "cause" */
         u->l = parse_primary(p);  /* target: call / variable / literal, etc. */
+        e = u;
+    }
+    else if (t->kind == T_ID && strcmp(t->text, "get") == 0 &&
+             p->i + 1 < p->n &&
+             !(peek(p)->kind == T_OP &&
+               (strcmp(peek(p)->text, "(") == 0 ||
+                strcmp(peek(p)->text, "::") == 0 ||
+                strcmp(peek(p)->text, ".") == 0 ||
+                strcmp(peek(p)->text, "[") == 0))) {
+        /* get X — prefix extraction: the actual returned value */
+        Node *u = mk_node(N_UNWRAP);
+        u->op = "get";
+        u->l = parse_primary(p);
         e = u;
     }
     else if (t->kind == T_ID) {
@@ -112,7 +125,7 @@ Node *parse_primary(Parser *p) {
                 e->qual = t->text;
                 e->mname = nm;
                 next(p); /* ( */
-                e->args = aalloc(sizeof(Node *) * 64); e->nargs = 0;
+                e->args = aalloc(sizeof(Node *) * BIO_ARGS_MAX); e->nargs = 0;
                 while (!is_op(p, ")") && !p->err) {
                     e->args[e->nargs++] = parse_expr(p);
                     if (is_op(p, ",")) next(p);
@@ -140,38 +153,11 @@ Node *parse_primary(Parser *p) {
         }
     }
     else if (t->kind == T_OP && strcmp(t->text, "&") == 0) {
-        /* smart reference: &<permission> <follow> <target name> */
-        if (peek(p)->kind == T_ID && p->i + 2 < p->n && p->t[p->i + 2].kind == T_ID &&
-            !(p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "(") == 0)) {
-            Node *rf = mk_node(N_REF);
-            rf->ref_perm = next(p)->text;      /* r / w / rw / m */
-            if (!valid_perm(rf->ref_perm)) {
-                fprintf(stderr, "syntax error: invalid reference permission %s (should be r/w/rw/m)\n", rf->ref_perm); p->err = 1;
-            }
-            rf->ref_follow = next(p)->text;    /* u / f / a */
-            if (!valid_follow(rf->ref_follow)) {
-                fprintf(stderr, "syntax error: invalid reference follow %s (should be u/f/a)\n", rf->ref_follow); p->err = 1;
-            }
-            rf->ref_name = expect_id(p);       /* target name */
-            e = rf;
-            return e;
-        }
-        /* Bare binary call &func(...) has been removed: the global symbol
-         * lookup across every loaded library is too dangerous. */
-        const char *fn = expect_id(p);
-        fprintf(stderr,
-                "syntax error: bare binary call '&%s(...)' is no longer supported "
-                "(deprecated — too dangerous); call it through a binary library stream, "
-                "e.g. m::%s(...)\n",
-                fn, fn);
-        p->err = 1;
-        expect_op(p, "(");
-        while (!is_op(p, ")") && peek(p)->kind != T_EOF) {
-            parse_expr(p);
-            if (is_op(p, ",")) next(p);
-        }
-        expect_op(p, ")");
-        e = mk_node(N_NUM);
+        /* address-of: &<lvalue expression> — creates a reference value;
+         * the reference type (&perm follow base) comes from the declaration. */
+        Node *rf = mk_node(N_REF);
+        rf->l = parse_primary(p);
+        e = rf;
     }
     else if (t->kind == T_OP && strcmp(t->text, "(") == 0) {
         e = parse_expr(p);
@@ -181,7 +167,7 @@ Node *parse_primary(Parser *p) {
         fprintf(stderr, "syntax error: cannot parse expression %s\n", t->text); p->err = 1;
         return mk_node(N_NUM);
     }
-    /* property access chain: .res / .ref / .field */
+    /* property access chain: object fields (request results use get/cause) */
 prop_chain:
     while (is_op(p, ".")) {
         next(p);
@@ -223,7 +209,7 @@ Node *parse_call_plain(Parser *p, const char *fname) {
     e->qual = NULL;
     e->mname = fname;
     expect_op(p, "(");
-    e->args = aalloc(sizeof(Node *) * 64); e->nargs = 0;
+    e->args = aalloc(sizeof(Node *) * BIO_ARGS_MAX); e->nargs = 0;
     while (!is_op(p, ")") && !p->err) {
         e->args[e->nargs++] = parse_expr(p);
         if (is_op(p, ",")) next(p);
@@ -238,7 +224,7 @@ Node *parse_call(Parser *p, const char *qual) {
     expect_op(p, "::");
     e->mname = expect_method_name(p);
     expect_op(p, "(");
-    e->args = aalloc(sizeof(Node *) * 64); e->nargs = 0;
+    e->args = aalloc(sizeof(Node *) * BIO_ARGS_MAX); e->nargs = 0;
     while (!is_op(p, ")") && !p->err) {
         e->args[e->nargs++] = parse_expr(p);
         if (is_op(p, ",")) next(p);
@@ -311,23 +297,15 @@ Node *parse_stmt(Parser *p) {
     if (t->kind == T_KW && strcmp(t->text, "continue") == 0) {
         next(p); expect_op(p, ";"); return mk_node(N_CONTINUE);
     }
-    if (t->kind == T_KW && (strcmp(t->text, "res") == 0 || strcmp(t->text, "ref") == 0 ||
-                            strcmp(t->text, "cause") == 0)) {
+    if (t->kind == T_KW && (strcmp(t->text, "res") == 0 || strcmp(t->text, "ref") == 0)) {
         next(p);
         Node *n = mk_node(N_RET);
-        n->retkind = strcmp(t->text, "cause") == 0 ? "ref" : t->text;   /* original spec: cause = refusal */
+        n->retkind = t->text;   /* "res" = respond, "ref" = refuse */
         n->nrets = 0;
-        if (strcmp(t->text, "ref") == 0) {
-            if (!(peek(p)->kind == T_KW && strcmp(peek(p)->text, "cause") == 0)) {
-                fprintf(stderr, "syntax error: ref must be followed by cause (ref cause <reason>;)\n");
-                p->err = 1;
-            }
-            next(p);               /* cause */
-        }
         n->expr = parse_expr(p);
         if (strcmp(t->text, "res") == 0 && is_op(p, ",")) {
             /* res multi-value: res a, b, c; → returns an array */
-            Node **rs = aalloc(sizeof(Node *) * 64);
+            Node **rs = aalloc(sizeof(Node *) * BIO_ARGS_MAX);
             int nr = 0;
             rs[nr++] = n->expr;
             while (is_op(p, ",")) {
@@ -369,27 +347,8 @@ Node *parse_stmt(Parser *p) {
     }
     if (t->kind == T_OP && strcmp(t->text, "&") == 0) {
         next(p); /* & */
-        /* Bare binary call statement &func(...); has been removed (deprecated — too dangerous). */
-        if (peek(p)->kind == T_ID && p->i + 1 < p->n &&
-            p->t[p->i + 1].kind == T_OP && strcmp(p->t[p->i + 1].text, "(") == 0) {
-            const char *fn = next(p)->text;
-            fprintf(stderr,
-                    "syntax error: bare binary call statement '&%s(...);' is no longer supported "
-                    "(deprecated — too dangerous); call it through a binary library stream, "
-                    "e.g. m::%s(...)\n",
-                    fn, fn);
-            p->err = 1;
-            expect_op(p, "(");
-            while (!is_op(p, ")") && peek(p)->kind != T_EOF) {
-                parse_expr(p);
-                if (is_op(p, ",")) next(p);
-            }
-            expect_op(p, ")");
-            expect_op(p, ";");
-            return mk_node(N_NUM);
-        }
-        /* Reference variable declaration (a reference is a type):
-         * &permission follow type name [= initial value]; */
+        /* Reference variable declaration — the reference is a typed value:
+         * &<perm> <follow> <base type> <name> = &<lvalue expression>; */
         Node *n = mk_node(N_REALME);
         if (peek(p)->kind != T_ID) {
             fprintf(stderr, "syntax error: expected reference permission (r/w/rw/m)\n");
@@ -398,28 +357,33 @@ Node *parse_stmt(Parser *p) {
         }
         n->ref_perm = next(p)->text;
         if (!valid_perm(n->ref_perm)) {
-            fprintf(stderr, "syntax error: invalid reference permission %s (should be r/w/rw/m)\n", n->ref_perm); p->err = 1;
+            fprintf(stderr, "syntax error: invalid reference permission %s (stack of r/w/m: r, w, m, rw, rm, wm, rwm)\n", n->ref_perm); p->err = 1;
         }
         if (peek(p)->kind != T_ID) {
-            fprintf(stderr, "syntax error: expected reference follow (u/f/a)\n");
+            fprintf(stderr, "syntax error: expected reference follow (u/f/a/t)\n");
             p->err = 1;
             return mk_node(N_NUM);
         }
         n->ref_follow = next(p)->text;
         if (!valid_follow(n->ref_follow)) {
-            fprintf(stderr, "syntax error: invalid reference follow %s (should be u/f/a)\n", n->ref_follow); p->err = 1;
+            fprintf(stderr, "syntax error: invalid reference follow %s (should be u/f/a/t)\n", n->ref_follow); p->err = 1;
         }
         if (peek(p)->kind != T_ID) {
-            fprintf(stderr, "syntax error: reference declaration requires a type (e.g. &r u int count = 5;)\n");
+            fprintf(stderr, "syntax error: reference declaration requires a base type (e.g. &rw u int p = &a[0];)\n");
             p->err = 1;
         } else {
-            next(p);                              /* type: int / CIO / T / ... (may carry []) */
+            n->ref_type = next(p)->text;          /* base type: int / double / string / Hero / ... */
             if (is_op(p, "[")) { next(p); expect_op(p, "]"); }
         }
-        n->name = expect_id(p);                   /* variable name */
-        if (is_op(p, "=")) {                      /* initial value: written to the same-name slot in the follow layer */
-            next(p);
-            n->init = parse_expr(p);
+        n->name = expect_id(p);
+        expect_op(p, "=");
+        n->init = parse_expr(p);
+        if (!n->init || n->init->kind != N_REF) {
+            fprintf(stderr, "syntax error: reference declaration requires &<expression> (e.g. &rw u int p = &a[0];)\n");
+            p->err = 1;
+        } else {
+            n->init->ref_perm = n->ref_perm;      /* the address-of value carries the declared permissions */
+            n->init->ref_follow = n->ref_follow;
         }
         expect_op(p, ";");
         return n;
@@ -439,21 +403,15 @@ Node *parse_stmt(Parser *p) {
             expect_op(p, ";");
             return n;
         }
-        /* increment/decrement: i++; / i--;  (rewritten as i = i + 1; / i = i - 1;) */
+        /* increment/decrement: i++; / i--;  (a reference variable moves its pointer) */
         if (p->i + 1 < p->n && p->t[p->i + 1].kind == T_OP &&
             (strcmp(p->t[p->i + 1].text, "++") == 0 || strcmp(p->t[p->i + 1].text, "--") == 0)) {
             const char *vn = t->text;              /* variable name = current token (i) */
             const char *inc = p->t[p->i + 1].text; /* ++ / -- (next token) */
             next(p); next(p);                      /* consume i and ++ */
-            Node *n = mk_node(N_ASSIGN);
+            Node *n = mk_node(N_INC);
             n->name = vn;
-            n->op = "=";
-            Node *b = mk_node(N_BINOP);
-            b->op = strcmp(inc, "++") == 0 ? "+" : "-";
-            Node *lv = mk_node(N_VAR); lv->name = vn;
-            Node *one = mk_node(N_NUM); one->num = 1;
-            b->l = lv; b->r = one;
-            n->expr = b;
+            n->inc_op = inc;
             if (!is_op(p, ";")) return n;   /* semicolon optional in the for-update clause, e.g. i++) */
             next(p);
             return n;
@@ -524,7 +482,7 @@ Node *parse_stmt(Parser *p) {
             c->qual = qual;
             c->mname = nm;
             expect_op(p, "(");
-            c->args = aalloc(sizeof(Node *) * 64); c->nargs = 0;
+            c->args = aalloc(sizeof(Node *) * BIO_ARGS_MAX); c->nargs = 0;
             while (!is_op(p, ")") && !p->err) {
                 c->args[c->nargs++] = parse_expr(p);
                 if (is_op(p, ",")) next(p);
@@ -549,7 +507,7 @@ Node *parse_stmt(Parser *p) {
 }
 
 Node **parse_stmts_until(Parser *p, const char *end, int *n) {
-    Node **stmts = aalloc(sizeof(Node *) * 512);
+    Node **stmts = aalloc(sizeof(Node *) * BIO_STMTS_MAX);
     int n2 = 0;
     while (!(peek(p)->kind == T_OP && strcmp(peek(p)->text, end) == 0)) {
         stmts[n2++] = parse_stmt(p);
@@ -565,14 +523,18 @@ static int is_type_name(const char *s) {
            strcmp(s, "string") == 0 || strcmp(s, "char") == 0;
 }
 
-/* smart reference permissions: r read / w write / rw read-write / m movable */
+/* smart reference permissions: any stack of r (read) / w (write) / m (move):
+ * r, w, m, rw, rm, wm, rwm — 7 combinations */
 static int valid_perm(const char *s) {
-    return strcmp(s, "r") == 0 || strcmp(s, "w") == 0 || strcmp(s, "rw") == 0 || strcmp(s, "m") == 0;
+    return strcmp(s, "r") == 0 || strcmp(s, "w") == 0 || strcmp(s, "m") == 0 ||
+           strcmp(s, "rw") == 0 || strcmp(s, "rm") == 0 || strcmp(s, "wm") == 0 ||
+           strcmp(s, "rwm") == 0;
 }
 
-/* smart reference follow layer: u program-level (Unistream) / f method-level (Functionstream) / a scope-level (Areastream) */
+/* smart reference follow layer: u program / f method / a area / t thread */
 static int valid_follow(const char *s) {
-    return strcmp(s, "u") == 0 || strcmp(s, "f") == 0 || strcmp(s, "a") == 0;
+    return strcmp(s, "u") == 0 || strcmp(s, "f") == 0 || strcmp(s, "a") == 0 ||
+           strcmp(s, "t") == 0;
 }
 
 /* assignment operators: = / compound assignments += -= *= /= %= */
@@ -622,7 +584,7 @@ static const char *parse_ret_type(Parser *p) {
     }
     if (t->kind == T_ID && is_type_name(t->text)) {
         next(p);
-        char buf[32];
+        char buf[BIO_NAME_MAX];
         snprintf(buf, sizeof(buf), "%s", t->text);
         if (is_op(p, "[")) { next(p); expect_op(p, "]"); strcat(buf, "[]"); }
         return astrdup(buf);
@@ -630,8 +592,35 @@ static const char *parse_ret_type(Parser *p) {
     return NULL;
 }
 
+/* Annotations written after a method:  void m() {...} @write */
+static void parse_method_annotations(Parser *p, Method *m) {
+    while (is_op(p, "@")) {
+        next(p);
+        const char *a = expect_id(p);
+        if (strcmp(a, "write") == 0) m->write = 1;
+        else {
+            fprintf(stderr, "syntax error: unknown method annotation @%s (only @write)\n", a);
+            p->err = 1;
+        }
+    }
+}
+
+/* Annotations written after a stream/class/fork declaration:  FIO r {} @onlyread @unfork */
+static void parse_decl_annotations(Parser *p, Decl *d) {
+    while (is_op(p, "@")) {
+        next(p);
+        const char *a = expect_id(p);
+        if (strcmp(a, "onlyread") == 0) d->onlyread = 1;
+        else if (strcmp(a, "unfork") == 0) d->unfork = 1;
+        else {
+            fprintf(stderr, "syntax error: unknown stream annotation @%s (only @onlyread/@unfork)\n", a);
+            p->err = 1;
+        }
+    }
+}
+
 void parse_methods(Parser *p, Method **methods, int *n) {
-    Method *ms = aalloc(sizeof(Method) * 64);
+    Method *ms = aalloc(sizeof(Method) * BIO_METHODS_MAX);
     int n2 = 0;
     while (!is_op(p, "}")) {
         const char *rt = parse_ret_type(p);
@@ -647,6 +636,7 @@ void parse_methods(Parser *p, Method **methods, int *n) {
         expect_op(p, ")");
         expect_op(p, "{");
         m->stmts = parse_stmts_until(p, "}", &m->nstmts);
+        parse_method_annotations(p, m);
         if (p->err) break;
     }
     *methods = ms; *n = n2;
@@ -662,8 +652,8 @@ void parse_methods(Parser *p, Method **methods, int *n) {
  *   T n;  T[] a;  T m() {...}  generic-style field/method
  */
 static void parse_members(Parser *p, Method **methods, int *nmethods, Field **fields, int *nfields) {
-    Method *ms = aalloc(sizeof(Method) * 128);
-    Field *fs = aalloc(sizeof(Field) * 128);
+    Method *ms = aalloc(sizeof(Method) * BIO_METHODS_MAX);
+    Field *fs = aalloc(sizeof(Field) * BIO_FIELDS_MAX);
     int nm = 0, nf = 0;
     while (!is_op(p, "}") && !p->err) {
         Tok *t = peek(p);
@@ -682,6 +672,7 @@ static void parse_members(Parser *p, Method **methods, int *nmethods, Field **fi
                 expect_op(p, ";");
                 m->stmts = NULL; m->nstmts = 0;   /* signature */
             }
+            parse_method_annotations(p, m);
         } else if (t->kind == T_ID && is_type_name(t->text)) {
             /* primitive type: a method with a return type, or a field (int x, y; / int[] a;) */
             const char *rt = parse_ret_type(p);
@@ -695,6 +686,7 @@ static void parse_members(Parser *p, Method **methods, int *nmethods, Field **fi
                 expect_op(p, ")");
                 if (is_op(p, "{")) { next(p); m->stmts = parse_stmts_until(p, "}", &m->nstmts); }
                 else { expect_op(p, ";"); m->stmts = NULL; m->nstmts = 0; }
+                parse_method_annotations(p, m);
             } else {
                 fs[nf].name = name; fs[nf].type = rt; nf++;
                 while (is_op(p, ",")) {
@@ -713,7 +705,7 @@ static void parse_members(Parser *p, Method **methods, int *nmethods, Field **fi
             int is_arr = 0;
             if (is_op(p, "[")) { next(p); expect_op(p, "]"); is_arr = 1; }
             const char *name = expect_id(p);
-            char buf[64];
+            char buf[BIO_NAME_MAX];
             snprintf(buf, sizeof buf, "%s%s", ty, is_arr ? "[]" : "");
             if (is_op(p, "(")) {
                 next(p);
@@ -724,6 +716,7 @@ static void parse_members(Parser *p, Method **methods, int *nmethods, Field **fi
                 expect_op(p, ")");
                 if (is_op(p, "{")) { next(p); m->stmts = parse_stmts_until(p, "}", &m->nstmts); }
                 else { expect_op(p, ";"); m->stmts = NULL; m->nstmts = 0; }
+                parse_method_annotations(p, m);
             } else {
                 fs[nf].name = name; fs[nf].type = astrdup(buf); nf++;
                 while (is_op(p, ",")) {
@@ -813,11 +806,13 @@ Decl *parse_program(Parser *p) {
                 /* De-special-cased: the body is a normal stream body (methods + fields),
                  * exactly like any other Stream declaration. */
                 parse_members(p, &d->methods, &d->nmethods, &d->fields, &d->nfields);
+                parse_decl_annotations(p, d);
                 goto decl_done;
             }
             d->kind = D_SIG;
             expect_op(p, "{");
             parse_members(p, &d->methods, &d->nmethods, &d->fields, &d->nfields);
+            parse_decl_annotations(p, d);
         }
         else if (t->kind == T_KW && strcmp(t->text, "Class") == 0) {
             next(p);
@@ -826,6 +821,7 @@ Decl *parse_program(Parser *p) {
             expect_op(p, "{");
             /* methods and fields parsed uniformly (Objstream uses methods; object properties use fields) */
             parse_members(p, &d->methods, &d->nmethods, &d->fields, &d->nfields);
+            parse_decl_annotations(p, d);
         }
         else if (t->kind == T_KW && strcmp(t->text, "Main") == 0) {
             next(p);
@@ -843,6 +839,7 @@ Decl *parse_program(Parser *p) {
             d->name = expect_id(p);
             expect_op(p, "{");
             parse_members(p, &d->methods, &d->nmethods, &d->fields, &d->nfields);
+            parse_decl_annotations(p, d);
         }
         else {
             fprintf(stderr, "syntax error: cannot parse top-level declaration %s\n", t->text); p->err = 1; break;

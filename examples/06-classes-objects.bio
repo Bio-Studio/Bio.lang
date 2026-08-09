@@ -13,33 +13,33 @@ Class Hero {
     void __init__(name string, hp int) {
         Obj::set(this, "name", name);       // store arbitrary attributes
         Obj::set(this, "hp", hp);
-        IO::println("hero appears:", name);
+        CIO::println("hero appears:", name);
     }
 
     // A method returning a value.
     int getHp() { res 100; }
 
-    string getName() { res Obj::get(this, "name").res; }
+    string getName() { res get Obj::get(this, "name"); }
 }
 
 Main {
     void exec() {
         // new → fork class stream + run __init__, returning an object.
         ALL h = new Hero("TAK", 88);
-        IO::println("object:", h);
+        CIO::println("object:", h);
 
         // Attributes are directly accessible.
-        IO::println("name =", h.name, " hp =", h.hp);
+        CIO::println("name =", h.name, " hp =", h.hp);
 
         // Call methods on the object with obj::method().
         ALL hp = Obj::call(h, "getHp");
-        IO::println("Obj::call getHp() =", hp.res);
+        CIO::println("Obj::call getHp() =", get hp);
         ALL nm = h::getName();
-        IO::println("h::getName() =", nm.res);
+        CIO::println("h::getName() =", get nm);
 
         // Each instance is independent.
         ALL h2 = new Hero("Lily", 66);
-        IO::println("h2.hp =", h2.hp, " (h.hp still =", h.hp, ")");
+        CIO::println("h2.hp =", h2.hp, " (h.hp still =", h.hp, ")");
     }
 }
 

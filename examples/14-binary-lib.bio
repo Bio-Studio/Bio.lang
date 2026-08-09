@@ -20,12 +20,12 @@ Main {
     void exec() {
         // Functions exported by the library become stream methods.
         ALL s = m::sin(0);
-        IO::println("m::sin(0) =", s.res);
-        IO::println("m::cos(0) =", m::cos(0).res);
-        IO::println("m::pow(2,10) =", m::pow(2, 10).res);
+        CIO::println("m::sin(0) =", get s);
+        CIO::println("m::cos(0) =", get m::cos(0));
+        CIO::println("m::pow(2,10) =", get m::pow(2, 10));
 
         // Bio methods declared in the body run as normal stream methods.
-        IO::println("m::doubleIt(21) =", m::doubleIt(21).res);
+        CIO::println("m::doubleIt(21) =", get m::doubleIt(21));
     }
 }
 

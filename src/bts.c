@@ -14,7 +14,31 @@
 #define _XOPEN_SOURCE 700
 #include "bio.h"
 #include "platform.h"
+#if defined(_WIN32)
+/* Windows has no ucontext: cooperative threads use Win32 fibers instead. */
+#include <windows.h>
+typedef struct BioUCtx {
+    LPVOID fiber;
+    struct { void *ss_sp; size_t ss_size; } uc_stack;
+    void *uc_link;
+} BioUCtx;
+#define ucontext_t BioUCtx
+static LPVOID bio_sched_fiber = NULL;
+static void __stdcall bio_fiber_entry(PVOID p) {
+    void (*fn)(void) = (void (*)(void))p;
+    fn();
+}
+static void bio_swapcontext(BioUCtx *from, BioUCtx *to) {
+    (void)from;
+    if (!bio_sched_fiber) bio_sched_fiber = ConvertThreadToFiber(NULL);
+    SwitchToFiber(to->fiber ? to->fiber : bio_sched_fiber);
+}
+#define getcontext(c) ((c)->fiber = NULL)
+#define makecontext(c, fn, argc) ((c)->fiber = CreateFiber(BIO_STACK_SIZE, bio_fiber_entry, (void (*)(void))(fn)))
+#define swapcontext(a, b) bio_swapcontext((a), (b))
+#else
 #include <ucontext.h>
+#endif
 #include <time.h>
 
 typedef struct BThread {
@@ -132,10 +156,10 @@ Result *bts_request(const char *method, Value **args, int nargs) {
         memset(&t->area, 0, sizeof(VarMap));
         t->area.is_area = 1;
         t->area.parent = &g_interp->globals;
-        t->stack = aalloc(65536);
+        t->stack = aalloc(BIO_STACK_SIZE);
         getcontext(&t->ctx);
         t->ctx.uc_stack.ss_sp = t->stack;
-        t->ctx.uc_stack.ss_size = 65536;
+        t->ctx.uc_stack.ss_size = BIO_STACK_SIZE;
         t->ctx.uc_link = NULL;
         makecontext(&t->ctx, bts_entry, 0);   /* entry data (boot) is set at scheduling time */
         t->next = threads;

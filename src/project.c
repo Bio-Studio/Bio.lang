@@ -1,6 +1,16 @@
 #include "bio.h"
 #include "platform.h"
 
+#ifndef BIO_HOME
+#define BIO_HOME "."
+#endif
+#ifndef BIO_CC
+#define BIO_CC "gcc"
+#endif
+#ifndef BIO_LDFLAGS
+#define BIO_LDFLAGS "-lm"
+#endif
+
 /* ═══════════════ project-based build & run ═══════════════
  * Project structure:
  *   package.toml        manifest (name/version/repo + [dependencies])
@@ -130,7 +140,7 @@ static ProjFile *find_provider(const char *kind, const char *name) {
  * Returns 0 on success; 1 if some needs are unmet. */
 static int bundle_from(ProjFile *entry) {
     entry->included = 1;
-    ProjFile *queue[512]; int qn = 0; int qi = 0;
+    ProjFile *queue[BIO_QUEUE_MAX]; int qn = 0; int qi = 0;
     queue[qn++] = entry;
     int unmet = 0;
     while (qi < qn) {
@@ -165,6 +175,223 @@ static char *concat_bundle(void) {
     for (ProjFile *f = files; f; f = f->next)
         if (f->included) { strcat(out, f->content); strcat(out, "\n"); }
     return out;
+}
+
+/* ═══════════════ Incremental multi-file compilation ═══════════════
+ * Every bundled .bio file becomes its own C module (embedded source string);
+ * each module is compiled to a cached .o keyed by content hash, so only
+ * changed files are recompiled. The C runtime is cached once per
+ * BIO_RUNTIME_VERSION. Finally all objects are linked into one executable
+ * (or a .img/.zip package). */
+
+static unsigned long long fnv1a(const char *s) {
+    unsigned long long h = 1469598103934665603ull;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        h ^= *p;
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
+static char *escape_cstr(const char *s) {
+    size_t n = strlen(s);
+    char *out = aalloc(n * 2 + 2);
+    char *p = out;
+    for (const char *q = s; *q; q++) {
+        unsigned char c = (unsigned char)*q;
+        if (c == '"') { *p++ = '\\'; *p++ = '"'; }
+        else if (c == '\\') { *p++ = '\\'; *p++ = '\\'; }
+        else if (c == '\n') { *p++ = '\\'; *p++ = 'n'; }
+        else if (c == '\t') { *p++ = '\\'; *p++ = 't'; }
+        else if (c == '\r') { *p++ = '\\'; *p++ = 'r'; }
+        else *p++ = (char)c;
+    }
+    *p = 0;
+    return out;
+}
+
+static int file_exists(const char *p) {
+    FILE *f = fopen(p, "rb");
+    if (f) { fclose(f); return 1; }
+    return 0;
+}
+
+static int write_text(const char *path, const char *text) {
+    FILE *f = fopen(path, "w");
+    if (!f) return -1;
+    fputs(text, f);
+    fclose(f);
+    return 0;
+}
+
+static const char *RUNTIME_SRC[] = {
+    "arena.c", "lexer.c", "value.c", "builtin.c", "parser.c",
+    "interp.c", "bts.c", "compile.c", "toml.c", "project.c",
+    "platform.c", "pack.c"
+};
+#define RUNTIME_N ((int)(sizeof RUNTIME_SRC / sizeof *RUNTIME_SRC))
+
+static int ensure_runtime_objs(const char *rtdir, const char ***objs, int *n) {
+    bio_mkdir_p(rtdir);
+    *objs = aalloc(sizeof(char *) * RUNTIME_N);
+    *n = 0;
+    for (int i = 0; i < RUNTIME_N; i++) {
+        char obj[BIO_PATH_MAX + 32], srcpath[BIO_PATH_MAX + 32];
+        snprintf(obj, sizeof obj, "%s/%s.o", rtdir, RUNTIME_SRC[i]);
+        if (!file_exists(obj)) {
+            snprintf(srcpath, sizeof srcpath, "%s/src/%s", BIO_HOME, RUNTIME_SRC[i]);
+            char hf[BIO_PATH_MAX + 64], cf[BIO_PATH_MAX + 64], lf[BIO_PATH_MAX + 64];
+            snprintf(hf, sizeof hf, "-DBIO_HOME=\"%s\"", BIO_HOME);
+            snprintf(cf, sizeof cf, "-DBIO_CC=\"%s\"", BIO_CC);
+            snprintf(lf, sizeof lf, "-DBIO_LDFLAGS=\"%s\"", BIO_LDFLAGS);
+            const char *av[] = { BIO_CC, "-O2", "-Isrc", hf, cf, lf,
+                                 "-c", srcpath, "-o", obj, NULL };
+            if (bio_run(av) != 0) return -1;
+        }
+        (*objs)[(*n)++] = astrdup(obj);
+    }
+    return 0;
+}
+
+static int compile_bio_module(const char *objdir, int idx, const char *content,
+                              const char *hash) {
+    char cpath[BIO_PATH_MAX + 32], opath[BIO_PATH_MAX + 32], hpath[BIO_PATH_MAX + 32];
+    snprintf(cpath, sizeof cpath, "%s/%d.c", objdir, idx);
+    snprintf(opath, sizeof opath, "%s/%d.o", objdir, idx);
+    snprintf(hpath, sizeof hpath, "%s/%d.hash", objdir, idx);
+    char old[BIO_STR_MAX] = "";
+    FILE *hf = fopen(hpath, "r");
+    if (hf) {
+        if (fgets(old, sizeof old, hf)) old[strcspn(old, "\n")] = 0;
+        fclose(hf);
+    }
+    if (file_exists(opath) && strcmp(old, hash) == 0) return 0;   /* cached */
+    char *esc = escape_cstr(content);
+    char *driver = aalloc(strlen(esc) + 64);
+    sprintf(driver, "const char *bio_src_%d = \"%s\";\n", idx, esc);
+    if (write_text(cpath, driver) != 0) return -1;
+    const char *av[] = { BIO_CC, "-O2", "-Isrc", "-c", cpath, "-o", opath, NULL };
+    if (bio_run(av) != 0) return -1;
+    FILE *w = fopen(hpath, "w");
+    if (w) { fprintf(w, "%s\n", hash); fclose(w); }
+    return 1;   /* recompiled */
+}
+
+static int compile_project_main(const char *objdir, int nfiles) {
+    char mainc[BIO_PATH_MAX + 32], maino[BIO_PATH_MAX + 32];
+    snprintf(mainc, sizeof mainc, "%s/main.c", objdir);
+    snprintf(maino, sizeof maino, "%s/main.o", objdir);
+    FILE *f = fopen(mainc, "w");
+    if (!f) return -1;
+    fprintf(f,
+        "#include <stdlib.h>\n"
+        "#include <string.h>\n"
+        "#include \"bio.h\"\n");
+    for (int i = 0; i < nfiles; i++) fprintf(f, "extern const char *bio_src_%d;\n", i);
+    fprintf(f, "int main(void) {\n"
+               "    const char *ml = getenv(\"BIO_MEM_LIMIT\");\n"
+               "    bio_set_mem_limit(ml && *ml ? (size_t)strtoull(ml, 0, 0) : 0);\n"
+               "    const char *parts[%d];\n", nfiles + 1);
+    for (int i = 0; i < nfiles; i++) fprintf(f, "    parts[%d] = bio_src_%d;\n", i, i);
+    fprintf(f,
+        "    parts[%d] = NULL;\n"
+        "    size_t total = 1;\n"
+        "    for (int i = 0; parts[i]; i++) total += strlen(parts[i]) + 1;\n"
+        "    char *buf = aalloc(total); buf[0] = 0;\n"
+        "    for (int i = 0; parts[i]; i++) { strcat(buf, parts[i]); strcat(buf, \"\\n\"); }\n"
+        "    run_source(buf);\n"
+        "    return 0;\n"
+        "}\n", nfiles);
+    fclose(f);
+    const char *av[] = { BIO_CC, "-O2", "-Isrc", "-c", mainc, "-o", maino, NULL };
+    return bio_run(av);
+}
+
+/* Split a whitespace-separated string into argv entries (points into s). */
+static int split_args(const char *s, const char **argv, int cap) {
+    int n = 0;
+    while (*s) {
+        while (*s && isspace((unsigned char)*s)) s++;
+        if (!*s) break;
+        if (n >= cap) break;
+        argv[n++] = s;
+        while (*s && !isspace((unsigned char)*s)) s++;
+    }
+    argv[n] = NULL;
+    return n;
+}
+
+static int link_project(const char *out, const char *objdir, int nfiles,
+                        const char **rtobjs, int nrt) {
+    const char *ld[8];
+    int nld = split_args(BIO_LDFLAGS, ld, 8);
+    const char **av = aalloc(sizeof(char *) * (size_t)(12 + nfiles + nrt + nld));
+    int n = 0;
+    av[n++] = BIO_CC;
+    av[n++] = "-O2";
+    av[n++] = "-Isrc";
+    av[n++] = "-o";
+    av[n++] = out;
+    char maino[BIO_PATH_MAX + 32];
+    snprintf(maino, sizeof maino, "%s/main.o", objdir);
+    av[n++] = astrdup(maino);
+    for (int i = 0; i < nfiles; i++) {
+        char fo[BIO_PATH_MAX + 32];
+        snprintf(fo, sizeof fo, "%s/%d.o", objdir, i);
+        av[n++] = astrdup(fo);
+    }
+    for (int i = 0; i < nrt; i++) av[n++] = rtobjs[i];
+    for (int i = 0; i < nld; i++) av[n++] = ld[i];
+    av[n] = NULL;
+    return bio_run(av);
+}
+
+static const char *project_name(const char *dir) {
+    static char name[BIO_NAME_MAX] = "app";
+    char *toml = join(dir, "package.toml");
+    FILE *f = fopen(toml, "r");
+    if (f) {
+        char line[BIO_MSG_MAX];
+        while (fgets(line, sizeof line, f))
+            if (sscanf(line, " name = \"%63[^\"]\"", name) == 1) break;
+        fclose(f);
+    }
+    return name;
+}
+
+/* Current platform's release directory name under bin/ (linux-x86_64, win64, ...). */
+static const char *current_platform_dir(void) {
+#if defined(_WIN32)
+#if defined(_M_ARM64) || defined(__aarch64__)
+    return "win-arm64";
+#elif defined(_M_X64) || defined(__x86_64__)
+    return "win64";
+#else
+    return "win32";
+#endif
+#elif defined(__APPLE__)
+#if defined(__aarch64__)
+    return "macos-arm64";
+#else
+    return "macos-x86_64";
+#endif
+#elif defined(__linux__)
+#if defined(__aarch64__)
+    return "linux-arm64";
+#else
+    return "linux-x86_64";
+#endif
+#else
+    return NULL;
+#endif
+}
+
+typedef struct { const char **paths; int n; int cap; } FileList;
+
+static void pkg_cb(const char *path, int is_dir, void *ud) {
+    FileList *fl = ud;
+    if (is_dir || fl->n >= fl->cap) return;
+    fl->paths[fl->n++] = astrdup(path);
 }
 
 /* find the entry file: src/main.bio, or the first .bio under src */
@@ -230,13 +457,88 @@ int project_build(const char *dir, const char *out) {
         fprintf(stderr, "⛔ build failed: unmet needs\n");
         return 1;
     }
-    char *src = concat_bundle();
-    if (!out) out = "app";
-    printf("building %d bundled file(s) → %s\n", 0, out);
     int n = 0;
     for (ProjFile *f = files; f; f = f->next) if (f->included) n++;
     printf("bundled %d file(s)\n", n);
-    if (compile_program(src, out) != 0) return 1;
+
+    const char *pname = project_name(dir);
+    char objdir[BIO_PATH_MAX], rtdir[BIO_PATH_MAX];
+    snprintf(objdir, sizeof objdir, "bin/.cache/project/%s", pname);
+    snprintf(rtdir, sizeof rtdir, "bin/.cache/runtime/%s", BIO_RUNTIME_VERSION);
+    bio_mkdir_p(objdir);
+
+    const char **rtobjs = NULL;
+    int nrt = 0;
+    if (ensure_runtime_objs(rtdir, &rtobjs, &nrt) != 0) {
+        fprintf(stderr, "⛔ runtime cache build failed\n");
+        return 1;
+    }
+
+    int idx = 0, recompiled = 0;
+    for (ProjFile *f = files; f; f = f->next) {
+        if (!f->included) continue;
+        char hash[BIO_NAME_MAX];
+        snprintf(hash, sizeof hash, "%016llx",
+                 (unsigned long long)fnv1a(f->content));
+        int rc = compile_bio_module(objdir, idx, f->content, hash);
+        if (rc < 0) {
+            fprintf(stderr, "⛔ compile failed: %s\n", f->path);
+            return 1;
+        }
+        recompiled += rc;
+        idx++;
+    }
+    if (compile_project_main(objdir, n) != 0) {
+        fprintf(stderr, "⛔ project driver compile failed\n");
+        return 1;
+    }
+    printf("incremental: %d module(s) cached, %d recompiled\n", n - recompiled, recompiled);
+
+    char default_out[BIO_PATH_MAX];
+    if (!out) {
+        snprintf(default_out, sizeof default_out, "bin/%s", pname);
+        out = default_out;
+    }
+    bio_mkdir_p("bin");
+    const char *final = out;
+    char appbin[BIO_PATH_MAX + 32];
+    if (ends_with(out, ".img") || ends_with(out, ".zip")) {
+        snprintf(appbin, sizeof appbin, "%s/app", objdir);
+        final = appbin;
+    }
+    if (link_project(final, objdir, n, rtobjs, nrt) != 0) {
+        fprintf(stderr, "⛔ link failed\n");
+        return 1;
+    }
+    if (final != out) {
+        /* Package the app binary together with the current platform's bio CLI
+         * and its lib/ dependencies. */
+        const char **pkg = aalloc(sizeof(char *) * 64);
+        int np = 0;
+        pkg[np++] = appbin;
+        const char *pf = current_platform_dir();
+        if (pf) {
+#if defined(_WIN32)
+            const char *exe = ".exe";
+#else
+            const char *exe = "";
+#endif
+            char cli[BIO_PATH_MAX + 32], libdir[BIO_PATH_MAX + 32];
+            snprintf(cli, sizeof cli, "bin/%s/bin/bio%s", pf, exe);
+            if (file_exists(cli)) pkg[np++] = astrdup(cli);
+            snprintf(libdir, sizeof libdir, "bin/%s/lib", pf);
+            FileList fl = { pkg + np, 0, 64 - np };
+            bio_walk_dir(libdir, pkg_cb, &fl);
+            np += fl.n;
+        }
+        int rc = ends_with(out, ".img")
+            ? img_create(out, "app", pkg, np)
+            : zip_create(out, pkg, np);
+        if (rc != 0) {
+            fprintf(stderr, "⛔ package failed: %s\n", out);
+            return 1;
+        }
+    }
     printf("✔ build ok: %s\n", out);
     return 0;
 }

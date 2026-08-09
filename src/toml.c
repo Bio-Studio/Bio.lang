@@ -39,8 +39,8 @@ TomlTable *toml_parse_file(const char *path) {
 
     TomlTable *t = aalloc(sizeof(TomlTable));
     /* Collect key-value pairs into an arena array (enough: few standard fields) */
-    static const char *keys[256];
-    static const char *vals[256];
+    static const char *keys[BIO_TOML_KEYS];
+    static const char *vals[BIO_TOML_KEYS];
     static int nkv = 0;
     nkv = 0;
 
@@ -172,7 +172,7 @@ const char *global_repo(void) {
         /* System default path (cross-platform): ~/.biolang/config.toml */
         const char *home = bio_home();
         if (home) {
-            static char p[1024];
+            static char p[BIO_PATH_MAX];
             snprintf(p, sizeof p, "%s/.biolang/config.toml", home);
             cfgpath = p;
         } else return NULL;

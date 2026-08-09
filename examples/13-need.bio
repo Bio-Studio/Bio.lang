@@ -25,7 +25,7 @@ Stream Writer {
     void write(msg string);
 }
 Writer ConsoleWriter {
-    void write(msg string) { IO::println(msg); }
+    void write(msg string) { CIO::println(msg); }
 }
 
 // A stream whose method is named greet satisfies `need function greet`.
@@ -33,7 +33,7 @@ Stream Greeter {
     void greet(name string);
 }
 Greeter G {
-    void greet(name string) { IO::println("hello,", name); }
+    void greet(name string) { CIO::println("hello,", name); }
 }
 
 // A class satisfies `need Class Hero`.
@@ -44,7 +44,7 @@ Class Hero {
 Main {
     void exec() {
         // The const is visible as a bare name (via the scope chain).
-        IO::println("PI =", PI);
+        CIO::println("PI =", PI);
 
         // Bare call → the method that satisfied `need function greet`.
         greet("TAK");
@@ -54,7 +54,7 @@ Main {
 
         // Instantiate the class that satisfied `need Class Hero`.
         ALL h = new Hero();
-        IO::println("hero created, hp =", h.hp);
+        CIO::println("hero created, hp =", h.hp);
     }
 }
 

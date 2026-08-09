@@ -2,6 +2,7 @@
 bio
 libbio.a
 *.o
+/bin/
 *.generated.c
 
 # Legacy single-file archive (source is now split under src/)

@@ -16,30 +16,30 @@ Main {
     void exec() {
         // CIO: console output.
         CIO::println("CIO console output");
-        IO::println("IO aggregates CIO");
+        CIO::println("IO is abstract; CIO implements");
 
         // SIO: an in-memory string buffer acts as a "file".
         ALL s = SIO::format("%d + %d = %d", 2, 3, 5);
-        IO::println("SIO::format →", s.res);
+        CIO::println("SIO::format →", get s);
         ALL up = SIO::upper("hello");
-        IO::println("SIO::upper →", up.res);
+        CIO::println("SIO::upper →", get up);
         SIO::println("line one");
         ALL line = SIO::getln();                 // read the buffer back
-        IO::println("SIO::getln →", line.res);
+        CIO::println("SIO::getln →", get line);
 
         // FIO: write and read back a real file.
         FIO::writeFile("/tmp/bio_example.txt", "Hello from BioLang!");
         FIO::appendFile("/tmp/bio_example.txt", " Appended line");
         ALL content = FIO::readFile("/tmp/bio_example.txt");
-        IO::println("FIO read back:", content.res);
+        CIO::println("FIO read back:", get content);
         ALL ok = FIO::exists("/tmp/bio_example.txt");
-        IO::println("FIO::exists →", ok.res);
+        CIO::println("FIO::exists →", get ok);
     }
 }
 
 // Expected output:
 //   CIO console output
-//   IO aggregates CIO
+//   IO is abstract; CIO implements
 //   SIO::format → 2 + 3 = 5
 //   SIO::upper → HELLO
 //   SIO::getln → line one

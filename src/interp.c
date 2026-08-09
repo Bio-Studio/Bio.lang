@@ -1,8 +1,6 @@
 #include "bio.h"
 #include "platform.h"
-#if !defined(_WIN32)
-#include <dlfcn.h>
-#endif
+#include <string.h>
 
 /* Interpreter */
 void var_set(VarMap *m, const char *name, Value *v) {
@@ -38,6 +36,85 @@ Value *var_get(VarMap *m, const char *name) {
     return NULL;
 }
 
+/* Find the map that owns a variable (used when a reference takes &name). */
+VarMap *var_find_map(VarMap *scope, const char *name) {
+    for (VarMap *s = scope; s; s = s->parent) {
+        for (int i = 0; i < s->n; i++)
+            if (strcmp(s->names[i], name) == 0) return s;
+    }
+    return NULL;
+}
+
+/* ---- @onlyread write-method detection ---- */
+
+static int fio_write_method(const char *m) {
+    return strcmp(m, "open") == 0 || strcmp(m, "writeFile") == 0 ||
+           strcmp(m, "appendFile") == 0 || strcmp(m, "write") == 0 ||
+           strcmp(m, "print") == 0 || strcmp(m, "println") == 0;
+}
+
+Method *method_find(Stream *s, const char *name);
+static int method_writes(Interp *in, Stream *s, Method *m, int depth);
+
+static int node_writes(Interp *in, Node *n, Stream *s, int depth) {
+    if (!n || depth > 32) return 0;
+    if (n->kind == N_CALL) {
+        if (n->qual && strcmp(n->qual, "FIO") == 0 && fio_write_method(n->mname)) return 1;
+        if (n->qual && s && strcmp(n->qual, s->name) == 0) {
+            Method *mm = method_find(s, n->mname);
+            if (mm && method_writes(in, s, mm, depth + 1)) return 1;
+        }
+    }
+    if (node_writes(in, n->l, s, depth + 1)) return 1;
+    if (node_writes(in, n->r, s, depth + 1)) return 1;
+    if (node_writes(in, n->expr, s, depth + 1)) return 1;
+    if (node_writes(in, n->target, s, depth + 1)) return 1;
+    if (node_writes(in, n->cond, s, depth + 1)) return 1;
+    if (node_writes(in, n->init, s, depth + 1)) return 1;
+    if (node_writes(in, n->update, s, depth + 1)) return 1;
+    for (int i = 0; i < n->nargs; i++)
+        if (node_writes(in, n->args[i], s, depth + 1)) return 1;
+    for (int i = 0; i < n->nrets; i++)
+        if (node_writes(in, n->rets[i], s, depth + 1)) return 1;
+    for (int i = 0; i < n->nstmts; i++)
+        if (node_writes(in, n->stmts[i], s, depth + 1)) return 1;
+    for (int i = 0; i < n->n_else; i++)
+        if (node_writes(in, n->else_stmts[i], s, depth + 1)) return 1;
+    return 0;
+}
+
+static int method_writes(Interp *in, Stream *s, Method *m, int depth) {
+    (void)in;
+    if (!m) return 0;
+    if (m->write) return 1;
+    if (depth > 32) return 0;
+    for (int i = 0; i < m->nstmts; i++)
+        if (node_writes(in, m->stmts[i], s, depth)) return 1;
+    return 0;
+}
+
+static int stream_method_is_write(Interp *in, Stream *s, const char *method) {
+    if ((s->builtin == B_FIO || s->sig_builtin == B_FIO) && fio_write_method(method)) return 1;
+    Method *m = method_find(s, method);
+    if (m) return method_writes(in, s, m, 0);
+    /* Signature streams carry their contract in Decls, not on the stream:
+     * check the signature and its fork implementations too. */
+    for (Decl *d = in->decls; d; d = d->next) {
+        if (d->kind == D_SIG && strcmp(d->name, s->name) == 0) {
+            for (int i = 0; i < d->nmethods; i++)
+                if (strcmp(d->methods[i].name, method) == 0)
+                    return method_writes(in, s, &d->methods[i], 0);
+            break;
+        }
+        if (d->kind == D_FORK && strcmp(d->sig, s->name) == 0) {
+            for (int i = 0; i < d->nmethods; i++)
+                if (strcmp(d->methods[i].name, method) == 0)
+                    return method_writes(in, s, &d->methods[i], 0);
+        }
+    }
+    return 0;
+}
+
 Interp *interp_new(Decl *decls) {
     Interp *in = aalloc(sizeof(Interp));
     in->decls = decls;
@@ -64,14 +141,28 @@ Stream *stream_new(const char *name, int builtin) {
 void stream_add(Interp *in, Stream *s) { s->next = in->streams; in->streams = s; }
 
 Stream *stream_find(Interp *in, const char *name) {
+    if (in->stream_cache && in->stream_cache_name == name) return in->stream_cache;
+    if (in->stream_cache && in->stream_cache_name &&
+        strcmp(in->stream_cache_name, name) == 0) return in->stream_cache;
     for (Stream *s = in->streams; s; s = s->next)
-        if (strcmp(s->name, name) == 0) return s;
+        if (strcmp(s->name, name) == 0) {
+            in->stream_cache = s;
+            in->stream_cache_name = s->name;
+            return s;
+        }
     return NULL;
 }
 
 Method *method_find(Stream *s, const char *name) {
+    if (s->method_cache && s->method_cache_name == name) return s->method_cache;
+    if (s->method_cache && s->method_cache_name &&
+        strcmp(s->method_cache_name, name) == 0) return s->method_cache;
     for (MethodEntry *e = s->methods; e; e = e->next)
-        if (strcmp(e->m->name, name) == 0) return e->m;
+        if (strcmp(e->m->name, name) == 0) {
+            s->method_cache = e->m;
+            s->method_cache_name = e->m->name;
+            return e->m;
+        }
     return NULL;
 }
 
@@ -85,7 +176,7 @@ void exec_stmts(Interp *in, Node **stmts, int n, VarMap *scope, Flow *fl);
 /* Execute a class method (Objstream: Obj::call / __init__ for new) */
 Result *interp_exec_method(Interp *in, Method *m, Value **args, int nargs, VarMap *parent, Value *self) {
     if (m->nparams != nargs) {
-        char buf[256];
+        char buf[BIO_MSG_MAX];
         snprintf(buf, sizeof buf, "%s requires %d arguments, got %d", m->name, m->nparams, nargs);
         return mk_ref(astrdup(buf));
     }
@@ -94,7 +185,9 @@ Result *interp_exec_method(Interp *in, Method *m, Value **args, int nargs, VarMa
         Value **all = aalloc(sizeof(Value *) * (size_t)(nargs + 1));
         all[0] = self;
         for (int i = 0; i < nargs; i++) all[i + 1] = args[i];
-        return builtin_request(m->builtin, m->name, all, nargs + 1);
+        Stream *bs = self ? stream_find(in, self->kind == V_ARR ? "Array" : self->obj_cls) : NULL;
+        if (!bs) bs = in->cur_stream;
+        return builtin_request(bs, m->builtin, m->name, all, nargs + 1);
     }
     VarMap scope;
     memset(&scope, 0, sizeof(VarMap));
@@ -108,15 +201,33 @@ Result *interp_exec_method(Interp *in, Method *m, Value **args, int nargs, VarMa
     if (self) var_set(&scope, "this", self);   /* Inside an object method, this = the object itself */
     for (int i = 0; i < nargs; i++) {
         Value *a = args[i];
-        /* Smart-reference argument pointing to a stream: &r f CIO → target CIO is a stream → bind as a stream reference so io::println works inside the method */
+        /* Smart-reference argument pointing to a stream variable → bind as a stream reference
+         * so io::println-style calls work inside the method. */
         if (a && a->kind == V_REF) {
-            Stream *ts = stream_find(in, a->ref_name);
-            if (ts) { a = mk_streamref(ts); goto bind; }
+            if (a->ref_tgt && a->ref_tgt->kind == 0) {
+                Value *tv = var_get_layer(a->ref_tgt->map, a->ref_tgt->name);
+                if (tv && (tv->kind == V_STREAM ||
+                           (tv->kind == V_RES && !tv->res->ref && tv->res->res &&
+                            tv->res->res->kind == V_STREAM))) {
+                    if (tv->kind == V_RES) tv = tv->res->res;
+                    a = mk_streamref(tv->stream_ref);
+                    goto bind;
+                }
+            }
         }
         if (a && a->kind == V_RES && a->res && !a->res->ref && a->res->res &&
             a->res->res->kind == V_REF) {
-            Stream *ts = stream_find(in, a->res->res->ref_name);
-            if (ts) { a = mk_streamref(ts); goto bind; }
+            Value *rv = a->res->res;
+            if (rv->ref_tgt && rv->ref_tgt->kind == 0) {
+                Value *tv = var_get_layer(rv->ref_tgt->map, rv->ref_tgt->name);
+                if (tv && (tv->kind == V_STREAM ||
+                           (tv->kind == V_RES && !tv->res->ref && tv->res->res &&
+                            tv->res->res->kind == V_STREAM))) {
+                    if (tv->kind == V_RES) tv = tv->res->res;
+                    a = mk_streamref(tv->stream_ref);
+                    goto bind;
+                }
+            }
         }
     bind:
         var_set(&scope, m->params[i], a);
@@ -141,7 +252,7 @@ Result *stream_request(Interp *in, Stream *s, const char *method, Value **args, 
         Method *bm = method_find(s, method);
         if (!bm || !bm->stmts) return bin_request(s, method, args, nargs);
     } else if (s->builtin) {
-        return builtin_request(s->builtin, method, args, nargs);
+        return builtin_request(s, s->builtin, method, args, nargs);
     }
     Method *m = method_find(s, method);
     if (!m) {
@@ -159,7 +270,11 @@ Result *stream_request(Interp *in, Stream *s, const char *method, Value **args, 
         }
     }
     if (!m) {
-        char buf[256];
+        /* Fork of a builtin signature (e.g. FIO r {}): fall back to the
+         * builtin implementation with this stream's own file state. */
+        if (s->sig_builtin != B_NONE)
+            return builtin_request(s, s->sig_builtin, method, args, nargs);
+        char buf[BIO_MSG_MAX];
         snprintf(buf, sizeof buf, "stream %s refuses: no method %s", s->name, method);
         return mk_ref(astrdup(buf));
     }
@@ -180,7 +295,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
             /* Streams are first-class values too: bare names like CIO/IO/... resolve to a stream reference (streams passed as arguments) */
             Stream *s = stream_find(in, e->name);
             if (s) return mk_streamref(s);
-            char buf[256];
+            char buf[BIO_MSG_MAX];
             snprintf(buf, sizeof buf, "refused: variable %s does not exist (washed away?)", e->name);
             return mk_refval(astrdup(buf));
         }
@@ -190,51 +305,72 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                 /* Object property access: obj.hp (array objects can also have properties) */
                 Value *f = var_get_layer(base->obj_fields, e->name);
                 if (f) return f;
-                char buf[256];
+                char buf[BIO_MSG_MAX];
                 snprintf(buf, sizeof buf, "refused: property %s was washed away", e->name);
                 return mk_refval(astrdup(buf));
             }
             if (base->kind == V_RES) {
-                if (strcmp(e->name, "res") == 0) {
-                    if (base->res->ref) {
-                        char buf[256];
-                        snprintf(buf, sizeof buf, "refused: request refused, cannot take res (cause: %s)", base->res->ref);
-                        return mk_refval(astrdup(buf));
-                    }
-                    return base->res->res;
-                }
-                if (strcmp(e->name, "cause") == 0 || strcmp(e->name, "ref") == 0) {
-                    /* The ALL structure holds both res and cause; .cause is the proper name, .ref is a compatibility alias */
-                    if (base->res->ref) return mk_str(base->res->ref);
-                    return mk_str("(no cause)");
-                }
                 /* Pass-through: a successful Result holding an object/array object → property access (a new result can be used directly as h.hp) */
                 if (!base->res->ref && base->res->res &&
                     (base->res->res->kind == V_OBJ ||
                      (base->res->res->kind == V_ARR && base->res->res->obj_fields))) {
                     Value *f = var_get_layer(base->res->res->obj_fields, e->name);
                     if (f) return f;
-                    char buf[256];
+                    char buf[BIO_MSG_MAX];
                     snprintf(buf, sizeof buf, "refused: property %s was washed away", e->name);
                     return mk_refval(astrdup(buf));
                 }
-                char buf[256];
+                char buf[BIO_MSG_MAX];
                 snprintf(buf, sizeof buf, "refused: Result has no property %s", e->name);
                 return mk_refval(astrdup(buf));
             }
-            char buf[256];
+            char buf[BIO_MSG_MAX];
             snprintf(buf, sizeof buf, "refused: cannot access %s (property washed away)", e->name);
             return mk_refval(astrdup(buf));
         }
-        case N_REF:
-            return mk_refobj(e->ref_perm, e->ref_follow, e->ref_name);
+        case N_REF: {
+            /* address-of &<lvalue>: build a reference target for a variable,
+             * an array element (a[0]) or an object field (obj.field). */
+            Node *tg = e->l;
+            if (tg->kind == N_VAR) {
+                VarMap *map = var_find_map(scope, tg->name);
+                if (!map) {
+                    Value *self = var_get(scope, "this");
+                    if (self && (self->kind == V_OBJ || (self->kind == V_ARR && self->obj_fields)) &&
+                        self->obj_fields && var_get_layer(self->obj_fields, tg->name))
+                        return mk_refobj(e->ref_perm, e->ref_follow, ref_target_field(self, tg->name));
+                    char buf[BIO_MSG_MAX];
+                    snprintf(buf, sizeof buf, "refused: cannot take address of unknown variable %s", tg->name);
+                    return mk_refval(astrdup(buf));
+                }
+                return mk_refobj(e->ref_perm, e->ref_follow, ref_target_var(map, tg->name));
+            }
+            if (tg->kind == N_INDEX) {
+                Value *base = eval_expr(in, tg->l, scope);
+                if (base->kind == V_RES && base->res && !base->res->ref && base->res->res)
+                    base = base->res->res;
+                Value *iv = eval_expr(in, tg->r, scope);
+                if (iv->kind == V_RES && iv->res && !iv->res->ref) iv = iv->res->res;
+                if (iv->kind != V_NUM) return mk_refval("refused: reference index requires a number");
+                return mk_refobj(e->ref_perm, e->ref_follow, ref_target_elem(base, (int)iv->num));
+            }
+            if (tg->kind == N_PROP) {
+                Value *base = eval_expr(in, tg->l, scope);
+                if (base->kind == V_RES && base->res && !base->res->ref && base->res->res)
+                    base = base->res->res;
+                if (base->kind == V_OBJ || (base->kind == V_ARR && base->obj_fields))
+                    return mk_refobj(e->ref_perm, e->ref_follow, ref_target_field(base, tg->name));
+                return mk_refval("refused: cannot take address of a non-object property");
+            }
+            return mk_refval("refused: cannot take address of this expression");
+        }
         case N_UNWRAP: {
-            /* res X takes the result / cause X takes the refusal reason (draft prefix extraction operator) */
+            /* get X takes the actual returned value / cause X takes the refusal reason */
             Value *v = eval_expr(in, e->l, scope);
             int want_cause = strcmp(e->op, "cause") == 0;
             if (is_rejected(v)) {
                 if (want_cause) return mk_str(reject_reason(v));   /* Rejected → refusal reason */
-                return v;                                            /* res on a rejected value → refusal propagation */
+                return v;                                            /* get on a rejected value → refusal propagation */
             }
             if (v->kind == V_RES && v->res) {
                 if (want_cause) {
@@ -244,7 +380,16 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                 if (v->res->ref) return v;                          /* Refusal propagation */
                 return v->res->res;
             }
-            /* Not a Result: res is itself, cause is none */
+            if (v->kind == V_REF) {
+                if (want_cause) return mk_str("(no cause)");
+                if (!strchr(v->ref_perm, 'r'))
+                    return mk_refval("refused: reference is write-only, cannot read");
+                const char *err = NULL;
+                Value *rv = ref_read(v->ref_tgt, &err);
+                if (!rv) return mk_refval(astrdup(err ? err : "reference read failed"));
+                return rv;
+            }
+            /* Not a Result: get is itself, cause is none */
             if (want_cause) return mk_str("(no cause)");
             return v;
         }
@@ -271,7 +416,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
             for (int i = 0; i < e->nargs; i++) {
                 Value *v = eval_expr(in, e->args[i], scope);
                 if (is_rejected(v)) {
-                    char buf[256];
+                    char buf[BIO_MSG_MAX];
                     if (e->qual)
                         snprintf(buf, sizeof buf, "refused: argument %s refused, request %s::%s also refused",
                                  reject_reason(v), e->qual, e->mname);
@@ -313,14 +458,13 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                             if (ts) m = method_find(ts, e->mname);
                         }
                         if (!m) {
-                            char buf[256];
+                            char buf[BIO_MSG_MAX];
                             snprintf(buf, sizeof buf, "refused: class %s has no method %s", clsname, e->mname);
                             return mk_refval(astrdup(buf));
                         }
                         if (ov->kind == V_OBJ || (ov->kind == V_ARR && ov->obj_fields))
                             ov->obj_fields->parent = in->cur_area;
-                        Result *r = interp_exec_method(in, m, vals, nvals,
-                            ov->kind == V_OBJ || (ov->kind == V_ARR && ov->obj_fields) ? ov->obj_fields : in->cur_area, ov);
+                        Result *r = interp_exec_method(in, m, vals, nvals, in->cur_area, ov);
                         if (r->ref && strcmp(r->ref, NOTHING) != 0) return mk_refval(r->ref);
                         Value *w2 = aalloc(sizeof(Value));
                         w2->kind = V_RES;
@@ -328,7 +472,7 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                         else w2->res = mk_res(r->res);
                         return w2;
                     }
-                    char buf[256];
+                    char buf[BIO_MSG_MAX];
                     snprintf(buf, sizeof buf, "refused: stream %s does not exist", e->qual);
                     return mk_refval(astrdup(buf));
                 }
@@ -342,10 +486,20 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
                         if (!t->builtin && method_find(t, e->mname)) { s = t; break; }
                 }
                 if (!s) {
-                    char buf[256];
+                    char buf[BIO_MSG_MAX];
                     snprintf(buf, sizeof buf, "refused: no function %s (no stream provides it)", e->mname);
                     return mk_refval(astrdup(buf));
                 }
+            }
+            /* @onlyread streams: users may not execute write methods (the
+             * stream's own methods may, so internal calls are allowed). */
+            if (s && s->onlyread && in->cur_stream != s &&
+                stream_method_is_write(in, s, e->mname)) {
+                char buf[BIO_MSG_MAX];
+                snprintf(buf, sizeof buf,
+                         "refused: stream %s is @onlyread — %s() is a write method",
+                         s->name, e->mname);
+                return mk_refval(astrdup(buf));
             }
             Result *r = stream_request(in, s, e->mname, vals, nvals);
             Value *w = aalloc(sizeof(Value));
@@ -395,14 +549,16 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
 void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
     switch (st->kind) {
         case N_REALME: {
-            /* Reference variable declaration (a reference is a type): &permission follow type name [= initial value] */
-            Value *ref = mk_refobj(st->ref_perm, st->ref_follow, st->name);
-            if (st->init) {
-                Value *iv = eval_expr(in, st->init, scope);
-                if (is_rejected(iv)) { fl->ret = mk_ref(reject_reason(iv)); break; }
-                var_set(ref_layer_get(in, st->ref_follow), st->name, iv);   /* Write the initial value into the followed layer */
+            /* Reference variable declaration:
+             * &rw u int p = &a[0];  — the whole reference is a typed value. */
+            Value *iv = eval_expr(in, st->init, scope);
+            if (is_rejected(iv)) { fl->ret = mk_ref(reject_reason(iv)); break; }
+            if (iv->kind != V_REF) {
+                fl->ret = mk_ref("refused: reference declaration requires &<expression>");
+                break;
             }
-            var_set(scope, st->name, ref);
+            iv->ref_type = st->ref_type;
+            var_set(scope, st->name, iv);
             break;
         }
         case N_ASSIGN: {
@@ -420,6 +576,26 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                 /* thread modifier: thread variable → current thread scope */
                 var_set(in->cur_area, st->name, v);
                 break;
+            }
+            /* Assignment through a reference variable: p = v writes the target. */
+            if (!st->target && st->name) {
+                Value *old = var_get(scope, st->name);
+                if (old && old->kind == V_REF) {
+                    if (st->op && strcmp(st->op, "=") != 0) {
+                        fl->ret = mk_ref("refused: compound assignment on a reference is not supported (use p = v or p++)");
+                        break;
+                    }
+                    if (!strchr(old->ref_perm, 'w')) {
+                        fl->ret = mk_ref("refused: reference is read-only, cannot write");
+                        break;
+                    }
+                    const char *err = NULL;
+                    if (ref_write(old->ref_tgt, v, &err) != 0) {
+                        fl->ret = mk_ref(astrdup(err ? err : "reference write failed"));
+                        break;
+                    }
+                    break;
+                }
             }
             /* Compound assignment += / -= / *= / /= / %=: target old value OP v */
             int is_compound = st->op && strcmp(st->op, "=") != 0;
@@ -443,7 +619,7 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                     old = var_get(scope, st->name);
                 }
                 if (!old || (old->kind == V_RES && old->res->ref)) {
-                    char buf[256];
+                    char buf[BIO_MSG_MAX];
                     snprintf(buf, sizeof buf, "refused: %s target %s has no old value", st->op, st->name ? st->name : "property");
                     fl->ret = mk_ref(astrdup(buf)); break;
                 }
@@ -516,6 +692,35 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
         case N_CALLSTMT:
             eval_expr(in, st->l, scope);
             break;
+        case N_INC: {
+            /* i++ / i--: numeric variables increment; reference variables move
+             * their pointer (m permission, like C's a++). */
+            Value *old = var_get(scope, st->name);
+            if (!old || (old->kind == V_RES && old->res->ref)) {
+                fl->ret = mk_ref("refused: increment target does not exist");
+                break;
+            }
+            if (old->kind == V_REF) {
+                if (!strchr(old->ref_perm, 'm')) {
+                    fl->ret = mk_ref("refused: moving the pointer requires m permission");
+                    break;
+                }
+                const char *err = NULL;
+                int delta = strcmp(st->inc_op, "++") == 0 ? 1 : -1;
+                if (ref_move(old->ref_tgt, delta, &err) != 0) {
+                    fl->ret = mk_ref(astrdup(err ? err : "pointer move failed"));
+                    break;
+                }
+                break;
+            }
+            if (old->kind != V_NUM) {
+                fl->ret = mk_ref("refused: increment/decrement requires a number or a reference");
+                break;
+            }
+            double nv = old->num + (strcmp(st->inc_op, "++") == 0 ? 1 : -1);
+            var_set(scope, st->name, mk_num(nv));
+            break;
+        }
         case N_RET: {
             if (strcmp(st->retkind, "res") == 0 && st->nrets > 1) {
                 /* Multiple res values → array */
@@ -526,12 +731,12 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
             } else {
                 Value *v = eval_expr(in, st->expr, scope);
                 if (strcmp(st->retkind, "res") == 0) {
-                    /* res result; unwrap: the responded value is a successful Result → take its inner res */
+                    /* res result: the responded value is a successful Result → take its inner value */
                     if (v->kind == V_RES && v->res && !v->res->ref && v->res->res)
                         v = v->res->res;
                     fl->ret = mk_res(v);
                 } else {
-                    /* cause result; unwrap: the responded value is a rejected Result → forward its refusal reason */
+                    /* ref result: a rejected Result is forwarded with its refusal reason */
                     if (v->kind == V_RES && v->res && v->res->ref)
                         fl->ret = mk_ref(v->res->ref);
                     else if (v->kind == V_RES && v->res && !v->res->ref)
@@ -596,35 +801,41 @@ void build(Interp *in) {
         static const char *PREBUILT =
             "Class Array {\n"
             "    void __init__(n int) {\n"
-            "        this::data = Solid::new().res;\n"
+            "        this::data = get Solid::new();\n"
             "        ALL i = 0;\n"
             "        while (i < n) { Solid::push(this::data, 0); i = i + 1; }\n"
             "        Arrays::add(this);\n"
             "    }\n"
-            "    int len() { res Solid::len(this::data).res; }\n"
-            "    int get(i int) { res Solid::get(this::data, i).res; }\n"
+            "    int len() { res get Solid::len(this::data); }\n"
+            "    int get(i int) { res get Solid::get(this::data, i); }\n"
             "    void set(i int, v) { Solid::set(this::data, i, v); res \"\"; }\n"
             "    void push(v) { Solid::push(this::data, v); res \"\"; }\n"
-            "    int pop() { res Solid::pop(this::data).res; }\n"
+            "    int pop() { res get Solid::pop(this::data); }\n"
             "    void clear() { Solid::clear(this::data); res \"\"; }\n"
-            "    string join(sep string) { res Solid::join(this::data, sep).res; }\n"
+            "    string join(sep string) { res get Solid::join(this::data, sep); }\n"
             "}\n"
             "Class Vector {\n"
             "    void __init__() {\n"
-            "        this::data = Solid::new().res;\n"
+            "        this::data = get Solid::new();\n"
             "        Arrays::add(this);\n"
             "    }\n"
-            "    int len() { res Solid::len(this::data).res; }\n"
-            "    int get(i int) { res Solid::get(this::data, i).res; }\n"
+            "    int len() { res get Solid::len(this::data); }\n"
+            "    int get(i int) { res get Solid::get(this::data, i); }\n"
             "    void set(i int, v) { Solid::set(this::data, i, v); res \"\"; }\n"
             "    void push(v) { Solid::push(this::data, v); res \"\"; }\n"
-            "    int pop() { res Solid::pop(this::data).res; }\n"
+            "    int pop() { res get Solid::pop(this::data); }\n"
             "    void clear() { Solid::clear(this::data); res \"\"; }\n"
-            "    string join(sep string) { res Solid::join(this::data, sep).res; }\n"
+            "    string join(sep string) { res get Solid::join(this::data, sep); }\n"
             "}\n";
-        int nt2, err2 = 0;
-        Tok *toks2 = tokenize(PREBUILT, &nt2);
-        Decl *pre = parse_program_tokens(toks2, nt2, &err2);
+        static Decl *pre = NULL;
+        static int prebuilt_done = 0;
+        if (!prebuilt_done) {
+            int nt2, err2 = 0;
+            Tok *toks2 = tokenize(PREBUILT, &nt2);
+            pre = parse_program_tokens(toks2, nt2, &err2);
+            prebuilt_done = 1;
+        }
+        int err2 = pre ? 0 : 1;
         if (err2) {
             fprintf(stderr, "⚠️ prebuilt Array/Vector parse failed, arrays unavailable\n");
         } else {
@@ -639,28 +850,38 @@ void build(Interp *in) {
     stream_add(in, stream_new("Obj", B_OBJ));
     stream_add(in, stream_new("Const", B_CONST));
     stream_add(in, stream_new("Rem", B_REM));
-    stream_add(in, stream_new("Time", B_TIME));
+    {
+        Stream *tm = stream_new("Time", B_TIME);
+        tm->onlyread = 1;   /* global timer is a read-only stream */
+        stream_add(in, tm);
+    }
     stream_add(in, stream_new("Ref", B_REF));
     stream_add(in, stream_new("Taskm", B_TASK));
     stream_add(in, stream_new("Threads", B_BTS));
     stream_add(in, stream_new("SIO", B_SIO));
     stream_add(in, stream_new("Solid", B_SOLID));
     stream_add(in, stream_new("Arrays", B_ARRAYS));
-    stream_add(in, stream_new("FIO", B_FIO));
+    {
+        Stream *f = stream_new("FIO", B_FIO);
+        f->onlyread = 1;    /* FIO itself is read-only; forks redefine the signature */
+        stream_add(in, f);
+    }
     stream_add(in, stream_new("CIO", B_CIO));
     stream_add(in, stream_new("Com", B_COM));       /* Comstream computation stream */
-    stream_add(in, stream_new("IO", B_IO));         /* IOStream parent stream: aggregates CIO/FIO/SIO */
+    stream_add(in, stream_new("IO", B_IO));         /* IOStream: abstract parent; implementations in CIO/FIO/SIO */
     stream_add(in, stream_new("Console", B_CIO));   /* CIO's prebuilt fork */
     for (Decl *d = in->decls; d; d = d->next) {
         if (d->kind == D_BIN) {
             /* Binary library stream: dlopen the attached library (exported symbols become
              * methods); the body may also declare normal Bio methods and fields — no special case. */
-            void *h = dlopen(d->file, RTLD_LAZY | RTLD_GLOBAL);
+            void *h = bio_dlopen(d->file);
             if (!h) {
-                fprintf(stderr, "⚠️ binary library load failed %s: %s\n", d->file, dlerror());
+                fprintf(stderr, "⚠️ binary library load failed %s: %s\n", d->file, bio_dlerror());
             }
             Stream *b = stream_new(d->name, B_BIN);
             b->dl = h;
+            b->onlyread = d->onlyread;
+            b->unfork = d->unfork;
             for (int i = 0; i < d->nmethods; i++) {
                 MethodEntry *e = aalloc(sizeof(MethodEntry));
                 e->m = &d->methods[i];
@@ -674,6 +895,18 @@ void build(Interp *in) {
         }
         if (d->kind == D_FORK) {
             Stream *s = stream_new(d->name, 0);
+            s->onlyread = d->onlyread;
+            s->unfork = d->unfork;
+            if (strcmp(d->sig, "FIO") == 0) s->sig_builtin = B_FIO;
+            else if (strcmp(d->sig, "CIO") == 0) s->sig_builtin = B_CIO;
+            else if (strcmp(d->sig, "SIO") == 0) s->sig_builtin = B_SIO;
+            for (Decl *sd = in->decls; sd; sd = sd->next)
+                if (sd->kind == D_SIG && strcmp(sd->name, d->sig) == 0 && sd->unfork) {
+                    fprintf(stderr, "refused: stream %s is @unfork, cannot fork\n", d->sig);
+                    s = NULL;
+                    break;
+                }
+            if (!s) continue;
             for (int i = 0; i < d->nmethods; i++) {
                 MethodEntry *e = aalloc(sizeof(MethodEntry));
                 e->m = &d->methods[i];
@@ -693,6 +926,8 @@ void build(Interp *in) {
         } else if (d->kind == D_CLASS) {
             /* Classes are also streams: methods (including those with return types) are registered as stream methods */
             Stream *s = stream_new(d->name, 0);
+            s->onlyread = d->onlyread;
+            s->unfork = d->unfork;
             for (int i = 0; i < d->nmethods; i++) {
                 MethodEntry *e = aalloc(sizeof(MethodEntry));
                 e->m = &d->methods[i];
@@ -705,6 +940,8 @@ void build(Interp *in) {
         } else if (d->kind == D_SIG) {
             if (!stream_find(in, d->name)) {
                 Stream *s = stream_new(d->name, 0);
+                s->onlyread = d->onlyread;
+                s->unfork = d->unfork;
                 for (int i = 0; i < d->nfields; i++)
                     var_set(s->fields, d->fields[i].name, field_default(d->fields[i].type));
                 stream_add(in, s);

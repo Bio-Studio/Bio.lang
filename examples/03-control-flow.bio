@@ -15,28 +15,28 @@ Main {
             sum = sum + i;
             i = i + 1;
         }
-        IO::println("1..10 sum (while) =", sum);
+        CIO::println("1..10 sum (while) =", sum);
 
         // for: factorial 5!
         ALL fac = 1;
         for (ALL k = 1; k <= 5; k = k + 1;) {
             fac = fac * k;
         }
-        IO::println("5! (for) =", fac);
+        CIO::println("5! (for) =", fac);
 
         // break skips out, continue skips the rest of this iteration
         for (ALL j = 1; j <= 10; j = j + 1;) {
             if (j == 4) { continue; }   // never print 4
             if (j > 7) { break; }       // stop printing after 7
-            IO::print(j, " ");
+            CIO::print(j, " ");
         }
-        IO::println();
+        CIO::println();
 
         // if / else if / else
         ALL n = 0;
-        if (n > 0) { IO::println("n is positive"); }
-        else if (n < 0) { IO::println("n is negative"); }
-        else { IO::println("n is zero"); }
+        if (n > 0) { CIO::println("n is positive"); }
+        else if (n < 0) { CIO::println("n is negative"); }
+        else { CIO::println("n is zero"); }
 
         // for(;;) is an infinite loop; break leaves it
         ALL total = 0;
@@ -44,7 +44,7 @@ Main {
             total = total + 1;
             if (total >= 3) { break; }
         }
-        IO::println("for(;;) counted:", total);
+        CIO::println("for(;;) counted:", total);
     }
 }
 
