@@ -25,12 +25,14 @@ typedef enum {
     TY_FLOAT,
     TY_DOUBLE,
     TY_BOOL,
-    TY_STR
+    TY_STR,
+    TY_RESULT
 } TyKind;
 
 typedef struct {
     LLVMValueRef v;
     TyKind ty;
+    int is_result;
 } LV;
 
 typedef struct Var {
@@ -54,6 +56,7 @@ typedef struct GConst {
 
 typedef struct FnInfo {
     const char *name;
+    const char *stream;      /* owning stream name (NULL = Main / bare) */
     Method *m;
     LLVMValueRef fn;
     LLVMTypeRef fnty;
@@ -66,15 +69,18 @@ typedef struct {
     LLVMModuleRef mod;
     LLVMBuilderRef builder;
     LLVMTypeRef i32ty;
+    LLVMTypeRef i64ty;
     LLVMTypeRef floatty;
     LLVMTypeRef doublety;
     LLVMTypeRef voidty;
     LLVMTypeRef boolty;
     LLVMTypeRef ptrty;
+    LLVMTypeRef resultty;
     LLVMValueRef printf_fn;
     LLVMTypeRef printf_fnty;
 
     Decl *main_decl;
+    Decl *decls;             /* all top-level declarations */
     GConst *consts;
     FnInfo *fns;
 
@@ -113,11 +119,12 @@ static TyKind type_from_name(Gen *g, const char *name) {
 static LLVMTypeRef ltype(Gen *g, TyKind ty) {
     switch (ty) {
         case TY_VOID: return g->voidty;
-        case TY_INT: return g->i32ty;
+        case TY_INT: return g->doublety;   /* BioLang numbers are doubles; int is a label */
         case TY_FLOAT: return g->floatty;
         case TY_DOUBLE: return g->doublety;
         case TY_BOOL: return g->boolty;
         case TY_STR: return g->ptrty;
+        case TY_RESULT: return g->resultty;
     }
     return g->i32ty;
 }
@@ -125,22 +132,97 @@ static LLVMTypeRef ltype(Gen *g, TyKind ty) {
 static LV zero_lv(Gen *g, TyKind ty) {
     LV z;
     z.ty = ty;
-    z.v = ty == TY_DOUBLE ? LLVMConstReal(g->doublety, 0.0)
+    z.is_result = 0;
+    z.v = ty == TY_DOUBLE || ty == TY_INT ? LLVMConstReal(g->doublety, 0.0)
         : ty == TY_FLOAT ? LLVMConstReal(g->floatty, 0.0)
-        : LLVMConstInt(ltype(g, ty), 0, ty == TY_INT);
+        : LLVMConstInt(ltype(g, ty), 0, 0);
     return z;
 }
 
 static LV one_lv(Gen *g, TyKind ty) {
     LV z = zero_lv(g, ty);
-    if (ty == TY_DOUBLE) z.v = LLVMConstReal(g->doublety, 1.0);
+    if (ty == TY_DOUBLE || ty == TY_INT) z.v = LLVMConstReal(g->doublety, 1.0);
     else if (ty == TY_FLOAT) z.v = LLVMConstReal(g->floatty, 1.0);
-    else z.v = LLVMConstInt(ltype(g, ty), 1, 1);
+    else z.v = LLVMConstInt(ltype(g, ty), 1, 0);
     return z;
 }
 
 static int is_fp(TyKind ty) {
-    return ty == TY_FLOAT || ty == TY_DOUBLE;
+    return ty == TY_FLOAT || ty == TY_DOUBLE || ty == TY_INT;
+}
+
+static LV cast_lv(Gen *g, LV x, TyKind want);
+static LLVMValueRef string_ptr(Gen *g, const char *s);
+static LLVMBasicBlockRef new_block(Gen *g, const char *base);
+static void place(Gen *g, LLVMBasicBlockRef bb);
+
+static LLVMValueRef make_result(Gen *g, int status, LLVMValueRef value,
+                                LLVMValueRef reason) {
+    LLVMValueRef r = LLVMGetUndef(g->resultty);
+    r = LLVMBuildInsertValue(g->builder, r,
+                             LLVMConstInt(g->i32ty, status, 0), 0,
+                             "res.status");
+    r = LLVMBuildInsertValue(g->builder, r, value, 1, "res.value");
+    r = LLVMBuildInsertValue(g->builder, r, reason, 2, "res.reason");
+    return r;
+}
+
+static LLVMValueRef result_status(Gen *g, LLVMValueRef r) {
+    return LLVMBuildExtractValue(g->builder, r, 0, "res.status");
+}
+
+static LLVMValueRef result_reason(Gen *g, LLVMValueRef r) {
+    return LLVMBuildExtractValue(g->builder, r, 2, "res.reason");
+}
+
+static LV result_value_lv(Gen *g, LV x) {
+    if (!x.is_result) return x;
+    LLVMValueRef dv = LLVMBuildExtractValue(g->builder, x.v, 1, "res.value");
+    LV d;
+    d.ty = TY_DOUBLE;
+    d.v = dv;
+    d.is_result = 0;
+    LV r = d;
+    r.ty = x.ty;
+    if (r.ty == TY_VOID) r.ty = TY_DOUBLE;
+    if (r.ty == TY_INT || r.ty == TY_BOOL || r.ty == TY_FLOAT)
+        r = cast_lv(g, d, r.ty);
+    return r;
+}
+
+static void unwrap_result(Gen *g, LV *x) {
+    if (!x->is_result) return;
+    LLVMValueRef st = result_status(g, x->v);
+    LLVMValueRef cond = LLVMBuildICmp(g->builder, LLVMIntEQ, st,
+                                      LLVMConstInt(g->i32ty, 1, 0),
+                                      "res.refused");
+    LLVMBasicBlockRef refbb = new_block(g, "refused");
+    LLVMBasicBlockRef okbb = new_block(g, "ok");
+    LLVMBuildCondBr(g->builder, cond, refbb, okbb);
+
+    place(g, refbb);
+    LLVMBuildRet(g->builder, x->v);
+    g->terminated = 1;
+
+    place(g, okbb);
+    *x = result_value_lv(g, *x);
+}
+
+static LV cause_lv(Gen *g, LV x) {
+    LV r;
+    r.is_result = 0;
+    r.ty = TY_STR;
+    if (x.is_result) {
+        LLVMValueRef st = result_status(g, x.v);
+        LLVMValueRef refused = LLVMBuildICmp(g->builder, LLVMIntEQ, st,
+                                             LLVMConstInt(g->i32ty, 1, 0),
+                                             "res.refused");
+        r.v = LLVMBuildSelect(g->builder, refused, result_reason(g, x.v),
+                              string_ptr(g, "(no cause)"), "res.cause");
+    } else {
+        r.v = string_ptr(g, "(no cause)");
+    }
+    return r;
 }
 
 static TyKind common_type(TyKind a, TyKind b) {
@@ -151,6 +233,10 @@ static TyKind common_type(TyKind a, TyKind b) {
 
 static LV cast_lv(Gen *g, LV x, TyKind want) {
     if (x.ty == want) return x;
+    if (x.ty == TY_RESULT || want == TY_RESULT) {
+        set_error(g, "result values must be unwrapped before use");
+        return zero_lv(g, want == TY_RESULT ? TY_DOUBLE : want);
+    }
     if (x.ty == TY_STR || want == TY_STR) {
         set_error(g, "string values are only supported as CIO::print arguments");
         return zero_lv(g, TY_INT);
@@ -161,13 +247,13 @@ static LV cast_lv(Gen *g, LV x, TyKind want) {
     }
 
     if (x.ty == TY_BOOL && want == TY_INT) {
-        x.v = LLVMBuildZExt(g->builder, x.v, g->i32ty, "bool2int");
+        x.v = LLVMBuildUIToFP(g->builder, x.v, g->doublety, "bool2fp");
         x.ty = TY_INT;
         return x;
     }
     if (x.ty == TY_INT && want == TY_BOOL) {
-        x.v = LLVMBuildICmp(g->builder, LLVMIntNE, x.v,
-                            LLVMConstInt(g->i32ty, 0, 1), "int2bool");
+        x.v = LLVMBuildFCmp(g->builder, LLVMRealUNE, x.v,
+                            LLVMConstReal(g->doublety, 0.0), "fp2bool");
         x.ty = TY_BOOL;
         return x;
     }
@@ -181,14 +267,21 @@ static LV cast_lv(Gen *g, LV x, TyKind want) {
         return x;
     }
 
-    if (x.ty == TY_INT && is_fp(want)) {
-        x.v = LLVMBuildSIToFP(g->builder, x.v, ltype(g, want), "int2fp");
-        x.ty = want;
-        return x;
+    if (x.ty == TY_INT || x.ty == TY_DOUBLE) {
+        /* TY_INT and TY_DOUBLE share the same LLVM representation. */
+        if (want == TY_INT || want == TY_DOUBLE) {
+            x.ty = want;
+            return x;
+        }
+        if (want == TY_FLOAT) {
+            x.v = LLVMBuildFPTrunc(g->builder, x.v, g->floatty, "fptrunc");
+            x.ty = TY_FLOAT;
+            return x;
+        }
     }
-    if (is_fp(x.ty) && want == TY_INT) {
-        x.v = LLVMBuildFPToSI(g->builder, x.v, g->i32ty, "fp2int");
-        x.ty = TY_INT;
+    if (x.ty == TY_FLOAT && (want == TY_INT || want == TY_DOUBLE)) {
+        x.v = LLVMBuildFPExt(g->builder, x.v, g->doublety, "fpext");
+        x.ty = want;
         return x;
     }
     if (x.ty == TY_FLOAT && want == TY_DOUBLE) {
@@ -290,6 +383,14 @@ static void maybe_br(Gen *g, LLVMBasicBlockRef target) {
     g->terminated = 1;
 }
 
+static FnInfo *fn_find_qual(Gen *g, const char *stream, const char *name) {
+    for (FnInfo *f = g->fns; f; f = f->next)
+        if (f->stream && strcmp(f->stream, stream) == 0 &&
+            strcmp(f->name, name) == 0)
+            return f;
+    return NULL;
+}
+
 static LLVMValueRef alloca_for(Gen *g, TyKind ty, const char *name) {
     LLVMBasicBlockRef old = LLVMGetInsertBlock(g->builder);
     LLVMValueRef first = LLVMGetFirstInstruction(g->entry);
@@ -319,12 +420,26 @@ static void add_var(Gen *g, const char *name, TyKind ty) {
 
 static LV load_var(Gen *g, Var *v) {
     LV r;
-    r.ty = v->ty;
+    r.is_result = v->ty == TY_RESULT;
+    r.ty = r.is_result ? TY_DOUBLE : v->ty;
     r.v = LLVMBuildLoad2(g->builder, ltype(g, v->ty), v->alloca, v->name);
     return r;
 }
 
 static void store_var(Gen *g, Var *v, LV val) {
+    if (v->ty == TY_RESULT) {
+        if (val.ty == TY_STR) {
+            set_error(g, "string values are not yet supported by LLVM backend");
+            return;
+        }
+        if (!val.is_result) {
+            val = cast_lv(g, val, TY_DOUBLE);
+            val.v = make_result(g, 0, val.v, LLVMConstPointerNull(g->ptrty));
+        }
+        LLVMBuildStore(g->builder, val.v, v->alloca);
+        return;
+    }
+    if (val.is_result) unwrap_result(g, &val);
     val = cast_lv(g, val, v->ty);
     LLVMBuildStore(g->builder, val.v, v->alloca);
 }
@@ -332,7 +447,8 @@ static void store_var(Gen *g, Var *v, LV val) {
 static LV const_int(Gen *g, long long v) {
     LV r;
     r.ty = TY_INT;
-    r.v = LLVMConstInt(g->i32ty, (unsigned long long)v, 1);
+    r.is_result = 0;
+    r.v = LLVMConstReal(g->doublety, (double)v);
     return r;
 }
 
@@ -342,6 +458,7 @@ static LV literal_lv(Gen *g, double d) {
         return const_int(g, i);
     LV r;
     r.ty = TY_DOUBLE;
+    r.is_result = 0;
     r.v = LLVMConstReal(g->doublety, d);
     return r;
 }
@@ -355,6 +472,8 @@ static void gen_stmt(Gen *g, Node *s);
 static void gen_stmts(Gen *g, Node **stmts, int n);
 
 static LV gen_binop(Gen *g, const char *op, LV a, LV b) {
+    if (a.is_result) unwrap_result(g, &a);
+    if (b.is_result) unwrap_result(g, &b);
     if (a.ty == TY_BOOL) a = cast_lv(g, a, TY_INT);
     if (b.ty == TY_BOOL) b = cast_lv(g, b, TY_INT);
 
@@ -363,6 +482,7 @@ static LV gen_binop(Gen *g, const char *op, LV a, LV b) {
         strcmp(op, "<=") == 0 || strcmp(op, ">=") == 0) {
         LV r;
         r.ty = TY_BOOL;
+        r.is_result = 0;
         if (is_fp(a.ty) || is_fp(b.ty)) {
             TyKind ct = common_type(a.ty, b.ty);
             a = cast_lv(g, a, ct);
@@ -391,13 +511,11 @@ static LV gen_binop(Gen *g, const char *op, LV a, LV b) {
     }
 
     if (strcmp(op, "%") == 0) {
-        if (is_fp(a.ty) || is_fp(b.ty)) {
-            set_error(g, "modulo on floating-point values is not yet supported by LLVM backend");
-            return zero_lv(g, TY_INT);
-        }
-        a = cast_lv(g, a, TY_INT);
-        b = cast_lv(g, b, TY_INT);
-        LV r = { LLVMBuildSRem(g->builder, a.v, b.v, "rem"), TY_INT };
+        /* BioLang numbers are doubles; % is C fmod (LLVM frem matches). */
+        TyKind ct = common_type(a.ty, b.ty);
+        a = cast_lv(g, a, ct);
+        b = cast_lv(g, b, ct);
+        LV r = { LLVMBuildFRem(g->builder, a.v, b.v, "rem"), ct, 0 };
         return r;
     }
 
@@ -406,6 +524,7 @@ static LV gen_binop(Gen *g, const char *op, LV a, LV b) {
     b = cast_lv(g, b, ct);
     LV r;
     r.ty = ct;
+    r.is_result = 0;
     if (is_fp(ct)) {
         if (strcmp(op, "+") == 0)
             r.v = LLVMBuildFAdd(g->builder, a.v, b.v, "add");
@@ -429,15 +548,25 @@ static LV gen_binop(Gen *g, const char *op, LV a, LV b) {
 }
 
 static LV gen_call(Gen *g, Node *e) {
+    FnInfo *fi = NULL;
     if (e->qual != NULL) {
-        set_error(g, "qualified call '%s::%s' is not yet supported by LLVM backend "
-                  "(only CIO::print/println and bare methods)", e->qual, e->mname);
-        return zero_lv(g, TY_INT);
-    }
-    FnInfo *fi = fn_find(g, e->mname);
-    if (!fi) {
-        set_error(g, "unknown method '%s'", e->mname);
-        return zero_lv(g, TY_INT);
+        if (strcmp(e->qual, "CIO") == 0 &&
+            (strcmp(e->mname, "println") == 0 || strcmp(e->mname, "print") == 0)) {
+            set_error(g, "CIO print outside a statement is not supported");
+            return zero_lv(g, TY_INT);
+        }
+        /* Stream method call: resolve by stream + name (fork implementation). */
+        fi = fn_find_qual(g, e->qual, e->mname);
+        if (!fi) {
+            set_error(g, "unknown method '%s::%s'", e->qual, e->mname);
+            return zero_lv(g, TY_INT);
+        }
+    } else {
+        fi = fn_find(g, e->mname);
+        if (!fi) {
+            set_error(g, "unknown method '%s'", e->mname);
+            return zero_lv(g, TY_INT);
+        }
     }
     if (e->nargs != fi->m->nparams) {
         set_error(g, "method '%s' expects %d argument(s), got %d",
@@ -448,13 +577,19 @@ static LV gen_call(Gen *g, Node *e) {
     for (int i = 0; i < e->nargs; i++) {
         TyKind pt = type_from_name(g, fi->m->param_types ? fi->m->param_types[i] : "void");
         LV a = gen_expr(g, e->args[i]);
+        if (a.is_result) unwrap_result(g, &a);
+        if (a.ty == TY_STR) {
+            set_error(g, "string arguments are not yet supported by LLVM backend");
+            return zero_lv(g, fi->ret);
+        }
         args[i] = cast_lv(g, a, pt).v;
     }
     LV r;
     r.ty = fi->ret;
+    r.is_result = 1;
     r.v = LLVMBuildCall2(g->builder, fi->fnty, fi->fn, args,
                          (unsigned)e->nargs,
-                         fi->ret == TY_VOID ? "" : e->mname);
+                         e->mname);
     return r;
 }
 
@@ -466,7 +601,8 @@ static LV gen_expr(Gen *g, Node *e) {
         case N_STR: {
             LV r;
             r.ty = TY_STR;
-            r.v = NULL;
+            r.is_result = 0;
+            r.v = string_ptr(g, e->str);
             return r;
         }
         case N_VAR: {
@@ -479,8 +615,19 @@ static LV gen_expr(Gen *g, Node *e) {
         }
         case N_CALL:
             return gen_call(g, e);
-        case N_BINOP:
-            return gen_binop(g, e->op, gen_expr(g, e->l), gen_expr(g, e->r));
+        case N_BINOP: {
+            LV a = gen_expr(g, e->l);
+            if (a.is_result) unwrap_result(g, &a);
+            LV b = gen_expr(g, e->r);
+            if (b.is_result) unwrap_result(g, &b);
+            return gen_binop(g, e->op, a, b);
+        }
+        case N_UNWRAP: {
+            LV v = gen_expr(g, e->l);
+            if (strcmp(e->op, "cause") == 0) return cause_lv(g, v);
+            if (v.is_result) unwrap_result(g, &v);
+            return v;
+        }
         default:
             set_error(g, "expression node #%d is not yet supported by LLVM backend",
                       (int)e->kind);
@@ -490,10 +637,8 @@ static LV gen_expr(Gen *g, Node *e) {
 
 static LLVMValueRef gen_truth(Gen *g, Node *cond) {
     LV v = gen_expr(g, cond);
+    if (v.is_result) unwrap_result(g, &v);
     if (v.ty == TY_BOOL) return v.v;
-    if (v.ty == TY_INT)
-        return LLVMBuildICmp(g->builder, LLVMIntNE, v.v,
-                             LLVMConstInt(g->i32ty, 0, 1), "tobool");
     if (is_fp(v.ty))
         return LLVMBuildFCmp(g->builder, LLVMRealUNE, v.v,
                              zero_lv(g, v.ty).v, "tobool");
@@ -501,62 +646,85 @@ static LLVMValueRef gen_truth(Gen *g, Node *cond) {
     return LLVMConstInt(g->boolty, 0, 0);
 }
 
-static void gen_print(Gen *g, Node *c) {
-    char fmt[4096];
-    size_t len = 0;
-    LLVMValueRef vals[BIO_ARGS_MAX];
-    int nvals = 0;
+static void printf_lit(Gen *g, const char *s) {
+    LLVMValueRef args[1] = { string_ptr(g, s) };
+    LLVMBuildCall2(g->builder, g->printf_fnty, g->printf_fn, args, 1,
+                   "printf");
+}
 
+static void printf_val(Gen *g, const char *fmt, LLVMValueRef v) {
+    LLVMValueRef args[2] = { string_ptr(g, fmt), v };
+    LLVMBuildCall2(g->builder, g->printf_fnty, g->printf_fn, args, 2,
+                   "printf");
+}
+
+static void print_lv(Gen *g, LV v) {
+    if (v.ty == TY_STR) {
+        printf_val(g, "%s", v.v);
+    } else if (v.ty == TY_BOOL) {
+        printf_val(g, "%d", cast_lv(g, v, TY_INT).v);
+    } else if (is_fp(v.ty)) {
+        /* Integer-valued doubles print as integers (%ld), like the
+         * interpreter's print_value; everything else uses %g. */
+        LLVMValueRef dv = cast_lv(g, v, TY_DOUBLE).v;
+        LLVMValueRef vi = LLVMBuildFPToSI(g->builder, dv, g->i64ty, "num2i64");
+        LLVMValueRef back = LLVMBuildSIToFP(g->builder, vi, g->doublety, "i642fp");
+        LLVMValueRef isint = LLVMBuildFCmp(g->builder, LLVMRealOEQ, dv, back,
+                                           "isint");
+        LLVMBasicBlockRef intbb = new_block(g, "print.int");
+        LLVMBasicBlockRef fpbb = new_block(g, "print.fp");
+        LLVMBasicBlockRef contbb = new_block(g, "print.cont");
+        LLVMBuildCondBr(g->builder, isint, intbb, fpbb);
+        place(g, intbb);
+        printf_val(g, "%ld", vi);
+        maybe_br(g, contbb);
+        place(g, fpbb);
+        printf_val(g, "%g", dv);
+        maybe_br(g, contbb);
+        place(g, contbb);
+    } else {
+        set_error(g, "cannot print this value");
+    }
+}
+
+static void print_result(Gen *g, LV res) {
+    LLVMValueRef st = result_status(g, res.v);
+    LLVMValueRef cond = LLVMBuildICmp(g->builder, LLVMIntEQ, st,
+                                      LLVMConstInt(g->i32ty, 1, 0),
+                                      "res.refused");
+    LLVMBasicBlockRef refbb = new_block(g, "print.refused");
+    LLVMBasicBlockRef okbb = new_block(g, "print.ok");
+    LLVMBasicBlockRef contbb = new_block(g, "print.cont");
+    LLVMBuildCondBr(g->builder, cond, refbb, okbb);
+
+    place(g, refbb);
+    printf_val(g, "refused: %s", result_reason(g, res.v));
+    maybe_br(g, contbb);
+
+    place(g, okbb);
+    print_lv(g, result_value_lv(g, res));
+    maybe_br(g, contbb);
+
+    place(g, contbb);
+}
+
+static void gen_print(Gen *g, Node *c) {
     for (int i = 0; i < c->nargs; i++) {
-        if (i > 0 && len + 1 < sizeof fmt) fmt[len++] = ' ';
+        if (i > 0) printf_lit(g, " ");
         Node *arg = c->args[i];
         if (arg->kind == N_STR) {
-            if (len + 2 >= sizeof fmt) {
-                set_error(g, "CIO print format string too long");
-                return;
-            }
-            fmt[len++] = '%';
-            fmt[len++] = 's';
-            vals[nvals++] = string_ptr(g, arg->str);
-        } else {
-            LV v = gen_expr(g, arg);
-            if (v.ty == TY_STR) {
-                set_error(g, "string variables are not yet supported by LLVM backend");
-                return;
-            }
-            if (v.ty == TY_INT || v.ty == TY_BOOL) {
-                if (len + 2 >= sizeof fmt) {
-                    set_error(g, "CIO print format string too long");
-                    return;
-                }
-                fmt[len++] = '%';
-                fmt[len++] = 'd';
-                vals[nvals++] = cast_lv(g, v, TY_INT).v;
-            } else {
-                if (len + 2 >= sizeof fmt) {
-                    set_error(g, "CIO print format string too long");
-                    return;
-                }
-                fmt[len++] = '%';
-                fmt[len++] = 'g';
-                vals[nvals++] = cast_lv(g, v, TY_DOUBLE).v;
-            }
+            printf_val(g, "%s", string_ptr(g, arg->str));
+            continue;
         }
-    }
-    if (strcmp(c->mname, "println") == 0) {
-        if (len + 1 >= sizeof fmt) {
-            set_error(g, "CIO print format string too long");
-            return;
-        }
-        fmt[len++] = '\n';
-    }
-    fmt[len] = 0;
 
-    LLVMValueRef args[BIO_ARGS_MAX + 1];
-    args[0] = string_ptr(g, fmt);
-    for (int i = 0; i < nvals; i++) args[i + 1] = vals[i];
-    LLVMBuildCall2(g->builder, g->printf_fnty, g->printf_fn, args,
-                   (unsigned)(nvals + 1), "printf");
+        int is_get = arg->kind == N_UNWRAP && strcmp(arg->op, "get") == 0;
+        LV v = gen_expr(g, is_get ? arg->l : arg);
+        if (v.is_result)
+            print_result(g, v);
+        else
+            print_lv(g, v);
+    }
+    if (strcmp(c->mname, "println") == 0) printf_lit(g, "\n");
 }
 
 static void gen_assign(Gen *g, Node *s) {
@@ -565,7 +733,8 @@ static void gen_assign(Gen *g, Node *s) {
         return;
     }
     if (s->vtype) {
-        TyKind ty = type_from_name(g, s->vtype);
+        TyKind ty = strcmp(s->vtype, "ALL") == 0
+            ? TY_RESULT : type_from_name(g, s->vtype);
         if (ty == TY_VOID || ty == TY_STR) {
             set_error(g, "variable type '%s' is not yet supported by LLVM backend",
                       s->vtype);
@@ -576,7 +745,11 @@ static void gen_assign(Gen *g, Node *s) {
             return;
         }
         add_var(g, s->name, ty);
-        if (s->expr) store_var(g, var_find(g, s->name), gen_expr(g, s->expr));
+        if (s->expr)
+            store_var(g, var_find(g, s->name), gen_expr(g, s->expr));
+        else if (ty == TY_RESULT)
+            store_var(g, var_find(g, s->name),
+                      zero_lv(g, TY_DOUBLE));
         return;
     }
     Var *v = var_find(g, s->name);
@@ -585,6 +758,7 @@ static void gen_assign(Gen *g, Node *s) {
         return;
     }
     LV rhs = gen_expr(g, s->expr);
+    if (rhs.is_result) unwrap_result(g, &rhs);
     if (!s->op || strcmp(s->op, "=") == 0) {
         store_var(g, v, rhs);
         return;
@@ -606,6 +780,7 @@ static void gen_inc(Gen *g, Node *s) {
     LV one = one_lv(g, v->ty);
     LV r;
     r.ty = v->ty;
+    r.is_result = 0;
     if (strcmp(s->inc_op, "++") == 0) {
         r.v = is_fp(v->ty)
             ? LLVMBuildFAdd(g->builder, cur.v, one.v, "inc")
@@ -693,28 +868,64 @@ static void gen_for(Gen *g, Node *s) {
 
 static void gen_ret(Gen *g, Node *s) {
     ensure_block(g);
-    if (s->retkind && strcmp(s->retkind, "res") != 0) {
-        set_error(g, "'%s' return is not yet supported by LLVM backend", s->retkind);
-        return;
-    }
     if (s->nrets > 1) {
         set_error(g, "multi-value return is not yet supported by LLVM backend");
         return;
     }
-    if (g->cur_ret == TY_VOID) {
-        if (s->expr) {
-            set_error(g, "void method cannot return a value");
-            return;
-        }
-        LLVMBuildRetVoid(g->builder);
-    } else {
+
+    if (s->retkind && strcmp(s->retkind, "ref") == 0) {
         if (!s->expr) {
-            set_error(g, "method must return a value");
+            set_error(g, "'ref' requires a refusal reason");
             return;
         }
-        LV v = cast_lv(g, gen_expr(g, s->expr), g->cur_ret);
-        LLVMBuildRet(g->builder, v.v);
+        LV v = gen_expr(g, s->expr);
+        if (v.is_result) {
+            LLVMValueRef st = result_status(g, v.v);
+            LLVMValueRef cond = LLVMBuildICmp(g->builder, LLVMIntEQ, st,
+                                              LLVMConstInt(g->i32ty, 1, 0),
+                                              "res.refused");
+            LLVMBasicBlockRef refbb = new_block(g, "ref.refused");
+            LLVMBasicBlockRef okbb = new_block(g, "ref.ok");
+            LLVMBuildCondBr(g->builder, cond, refbb, okbb);
+
+            place(g, refbb);
+            LLVMBuildRet(g->builder, v.v);
+            g->terminated = 1;
+
+            place(g, okbb);
+            LLVMBuildRet(g->builder,
+                         make_result(g, 1, LLVMConstReal(g->doublety, 0.0),
+                                     string_ptr(g, "(no cause)")));
+            g->terminated = 1;
+            return;
+        }
+        if (v.ty != TY_STR) {
+            set_error(g, "'ref' requires a string literal or a refused Result");
+            return;
+        }
+        LLVMBuildRet(g->builder,
+                     make_result(g, 1, LLVMConstReal(g->doublety, 0.0), v.v));
+        g->terminated = 1;
+        return;
     }
+
+    if (!s->expr) {
+        LLVMBuildRet(g->builder,
+                     make_result(g, 0, LLVMConstReal(g->doublety, 0.0),
+                                 LLVMConstPointerNull(g->ptrty)));
+        g->terminated = 1;
+        return;
+    }
+
+    LV v = gen_expr(g, s->expr);
+    if (v.is_result) unwrap_result(g, &v);
+    if (v.ty == TY_STR) {
+        set_error(g, "res of a string value is not yet supported by LLVM backend");
+        return;
+    }
+    v = cast_lv(g, v, TY_DOUBLE);
+    LLVMBuildRet(g->builder,
+                 make_result(g, 0, v.v, LLVMConstPointerNull(g->ptrty)));
     g->terminated = 1;
 }
 
@@ -771,6 +982,7 @@ static void gen_stmts(Gen *g, Node **stmts, int n) {
 }
 
 static int predeclare_methods(Gen *g) {
+    /* Main stream methods (bare calls). */
     Decl *d = g->main_decl;
     for (int i = 0; i < d->nmethods; i++) {
         Method *m = &d->methods[i];
@@ -794,18 +1006,61 @@ static int predeclare_methods(Gen *g) {
         }
         char fname[128];
         snprintf(fname, sizeof fname, "bio_%s", m->name);
-        LLVMTypeRef fnty = LLVMFunctionType(ltype(g, rt),
+        LLVMTypeRef fnty = LLVMFunctionType(g->resultty,
                                             m->nparams ? ptypes : NULL,
                                             (unsigned)m->nparams, 0);
         LLVMValueRef fn = LLVMAddFunction(g->mod, fname, fnty);
         FnInfo *fi = calloc(1, sizeof *fi);
         fi->name = m->name;
+        fi->stream = NULL;
         fi->m = m;
         fi->fn = fn;
         fi->fnty = fnty;
         fi->ret = rt;
         fi->next = g->fns;
         g->fns = fi;
+    }
+    /* Fork implementation streams: methods callable as Qual::name(...).
+     * Signatures (D_SIG) carry no body; calls resolve by method name to the
+     * fork that implements them. */
+    for (Decl *fd = g->decls; fd; fd = fd->next) {
+        if (fd->kind != D_FORK) continue;
+        for (int i = 0; i < fd->nmethods; i++) {
+            Method *m = &fd->methods[i];
+            TyKind rt = type_from_name(g, m->ret_type);
+            if (g->err) return 1;
+            if (rt == TY_STR || (rt == TY_VOID && strcmp(m->ret_type, "void") != 0)) {
+                set_error(g, "method return type '%s' is not yet supported by LLVM backend",
+                          m->ret_type);
+                return 1;
+            }
+            LLVMTypeRef ptypes[BIO_ARGS_MAX];
+            for (int j = 0; j < m->nparams; j++) {
+                TyKind pt = type_from_name(g, m->param_types ? m->param_types[j] : "void");
+                if (g->err) return 1;
+                if (pt == TY_VOID || pt == TY_STR) {
+                    set_error(g, "parameter type of '%s' is not yet supported by LLVM backend",
+                              m->name);
+                    return 1;
+                }
+                ptypes[j] = ltype(g, pt);
+            }
+            char fname[160];
+            snprintf(fname, sizeof fname, "bio_%s_%s", fd->name, m->name);
+            LLVMTypeRef fnty = LLVMFunctionType(g->resultty,
+                                                m->nparams ? ptypes : NULL,
+                                                (unsigned)m->nparams, 0);
+            LLVMValueRef fn = LLVMAddFunction(g->mod, fname, fnty);
+            FnInfo *fi = calloc(1, sizeof *fi);
+            fi->name = m->name;
+            fi->stream = fd->name;
+            fi->m = m;
+            fi->fn = fn;
+            fi->fnty = fnty;
+            fi->ret = rt;
+            fi->next = g->fns;
+            g->fns = fi;
+        }
     }
     return 0;
 }
@@ -832,14 +1087,14 @@ static void gen_method(Gen *g, FnInfo *fi) {
     }
     gen_stmts(g, m->stmts, m->nstmts);
     if (!g->terminated) {
-        if (g->cur_ret == TY_VOID)
-            LLVMBuildRetVoid(g->builder);
-        else
-            LLVMBuildRet(g->builder, zero_lv(g, g->cur_ret).v);
+        LLVMBuildRet(g->builder,
+                     make_result(g, 0, LLVMConstReal(g->doublety, 0.0),
+                                 LLVMConstPointerNull(g->ptrty)));
     }
 }
 
 static int build_module(Gen *g, Decl *decls) {
+    g->decls = decls;
     /* Validate top-level declarations and fold global int consts. */
     for (Decl *d = decls; d; d = d->next) {
         if (d->kind == D_CONST) {
@@ -854,9 +1109,14 @@ static int build_module(Gen *g, Decl *decls) {
                 return 1;
             }
             g->main_decl = d;
+        } else if (d->kind == D_FORK || d->kind == D_SIG) {
+            /* Fork streams provide callable methods; signatures carry the
+             * contract (arity checked at the call site). Both are handled
+             * in predeclare_methods/gen_method. */
+            continue;
         } else {
             set_error(g, "declaration kind #%d is not yet supported by LLVM backend "
-                      "(only const int and Main)", (int)d->kind);
+                      "(const, Stream/Class forks and Main)", (int)d->kind);
             return 1;
         }
     }
@@ -1007,11 +1267,15 @@ int bio_llvm_compile(const char *file, const char *out) {
     g.mod = LLVMModuleCreateWithNameInContext("biolang", g.ctx);
     g.builder = LLVMCreateBuilderInContext(g.ctx);
     g.i32ty = LLVMInt32TypeInContext(g.ctx);
+    g.i64ty = LLVMInt64TypeInContext(g.ctx);
     g.floatty = LLVMFloatTypeInContext(g.ctx);
     g.doublety = LLVMDoubleTypeInContext(g.ctx);
     g.voidty = LLVMVoidTypeInContext(g.ctx);
     g.boolty = LLVMInt1TypeInContext(g.ctx);
     g.ptrty = LLVMPointerTypeInContext(g.ctx, 0);
+    g.resultty = LLVMStructCreateNamed(g.ctx, "Result");
+    LLVMTypeRef result_elems[3] = { g.i32ty, g.doublety, g.ptrty };
+    LLVMStructSetBody(g.resultty, result_elems, 3, 0);
 
     /* Declare C printf (variadic). */
     LLVMTypeRef printf_params[1] = { g.ptrty };

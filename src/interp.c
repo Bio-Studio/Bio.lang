@@ -451,6 +451,16 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
             for (int i = 0; i < e->nargs; i++) {
                 Value *v = eval_expr(in, e->args[i], scope);
                 if (is_rejected(v)) {
+                    /* CIO print/println is allowed to display a refused result
+                     * as "refused: <reason>" instead of refusing the request. */
+                    int cio_print = e->qual &&
+                        strcmp(e->qual, "CIO") == 0 &&
+                        (strcmp(e->mname, "println") == 0 ||
+                         strcmp(e->mname, "print") == 0);
+                    if (cio_print) {
+                        vals[nvals++] = v;
+                        continue;
+                    }
                     char buf[BIO_MSG_MAX];
                     if (e->qual)
                         snprintf(buf, sizeof buf, "refused: argument %s refused, request %s::%s also refused",
@@ -768,11 +778,12 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                     arr->items[arr->len++] = eval_expr(in, st->rets[i], scope);
                 fl->ret = mk_res(arr);
             } else {
-                Value *v = eval_expr(in, st->expr, scope);
+                Value *v = st->expr ? eval_expr(in, st->expr, scope) : NULL;
                 if (strcmp(st->retkind, "res") == 0) {
                     /* res result: the responded value is a successful Result → take its inner value.
                      * res of a REFUSED request forwards the refusal (refusal propagation). */
-                    if (v->kind == V_RES && v->res && v->res->ref)
+                    if (!v) fl->ret = mk_res(mk_num(0));
+                    else if (v->kind == V_RES && v->res && v->res->ref)
                         fl->ret = mk_ref(v->res->ref);
                     else {
                         if (v->kind == V_RES && v->res && !v->res->ref && v->res->res)
@@ -781,7 +792,8 @@ void exec_stmt(Interp *in, Node *st, VarMap *scope, Flow *fl) {
                     }
                 } else {
                     /* ref result: a rejected Result is forwarded with its refusal reason */
-                    if (v->kind == V_RES && v->res && v->res->ref)
+                    if (!v) fl->ret = mk_ref("refused");
+                    else if (v->kind == V_RES && v->res && v->res->ref)
                         fl->ret = mk_ref(v->res->ref);
                     else if (v->kind == V_RES && v->res && !v->res->ref)
                         fl->ret = mk_ref("(no cause)");

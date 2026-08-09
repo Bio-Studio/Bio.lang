@@ -302,8 +302,8 @@ Node *parse_stmt(Parser *p) {
         Node *n = mk_node(N_RET);
         n->retkind = t->text;   /* "res" = respond, "ref" = refuse */
         n->nrets = 0;
-        n->expr = parse_expr(p);
-        if (strcmp(t->text, "res") == 0 && is_op(p, ",")) {
+        if (!is_op(p, ";")) n->expr = parse_expr(p);
+        if (n->expr && strcmp(t->text, "res") == 0 && is_op(p, ",")) {
             /* res multi-value: res a, b, c; → returns an array */
             Node **rs = aalloc(sizeof(Node *) * BIO_ARGS_MAX);
             int nr = 0;

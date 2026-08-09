@@ -24,8 +24,11 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
     if (strcmp(method, "println") == 0) {
         for (int i = 0; i < nargs; i++) {
             if (i) printf(" ");
-            /* Successful Result auto-unwraps for display (res(x) → x; ref stays displayed as a ref) */
-            if (args[i]->kind == V_RES && args[i]->res && !args[i]->res->ref)
+            /* Successful Result auto-unwraps for display (res(x) → x);
+             * refused results display as "refused: <reason>". */
+            if (args[i]->kind == V_RES && args[i]->res && args[i]->res->ref)
+                printf("refused: %s", args[i]->res->ref);
+            else if (args[i]->kind == V_RES && args[i]->res && !args[i]->res->ref)
                 print_value(args[i]->res->res);
             else print_value(args[i]);
         }
@@ -34,8 +37,11 @@ static Result *cio_request(const char *method, Value **args, int nargs) {
     }
     if (strcmp(method, "print") == 0) {
         for (int i = 0; i < nargs; i++) {
-            /* Successful Result auto-unwraps for display (res(x) → x), consistent with println */
-            if (args[i]->kind == V_RES && args[i]->res && !args[i]->res->ref)
+            /* Successful Result auto-unwraps for display (res(x) → x),
+             * consistent with println; refused results show their reason. */
+            if (args[i]->kind == V_RES && args[i]->res && args[i]->res->ref)
+                printf("refused: %s", args[i]->res->ref);
+            else if (args[i]->kind == V_RES && args[i]->res && !args[i]->res->ref)
                 print_value(args[i]->res->res);
             else print_value(args[i]);
         }
