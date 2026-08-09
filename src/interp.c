@@ -1,5 +1,6 @@
 #include "bio.h"
 #include "platform.h"
+#include <math.h>
 #include <string.h>
 
 /* Interpreter */
@@ -566,6 +567,10 @@ Value *eval_expr(Interp *in, Node *e, VarMap *scope) {
             else if (strcmp(op, "/") == 0) {
                 if (b->num == 0) return mk_refval("refused: division by zero");
                 r = a->num / b->num;
+            }
+            else if (strcmp(op, "%") == 0) {
+                if (b->num == 0) return mk_refval("refused: modulo by zero");
+                r = fmod(a->num, b->num);
             }
             else if (strcmp(op, "<") == 0) r = a->num < b->num;
             else if (strcmp(op, ">") == 0) r = a->num > b->num;

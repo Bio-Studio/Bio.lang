@@ -183,7 +183,7 @@ prop_chain:
 
 Node *parse_expr(Parser *p) {
     Node *left = parse_primary(p);
-    while (peek(p)->kind == T_OP && strchr("+-*/", peek(p)->text[0]) &&
+    while (peek(p)->kind == T_OP && strchr("+-*/%", peek(p)->text[0]) &&
            (strcmp(peek(p)->text, "::") != 0 && strcmp(peek(p)->text, ".") != 0 &&
             strcmp(peek(p)->text, "==") != 0 && strcmp(peek(p)->text, "!=") != 0 &&
             strcmp(peek(p)->text, "<=") != 0 && strcmp(peek(p)->text, ">=") != 0)) {
@@ -328,6 +328,7 @@ Node *parse_stmt(Parser *p) {
         }
         next(p); /* type */
         Node *n = mk_node(N_ASSIGN);
+        n->vtype = t->text;
         n->is_const = is_c;
         n->is_thread = !is_c;
         n->name = expect_id(p);
@@ -339,6 +340,7 @@ Node *parse_stmt(Parser *p) {
     if (t->kind == T_KW && strcmp(t->text, "ALL") == 0) {
         next(p);
         Node *n = mk_node(N_ASSIGN);
+        n->vtype = "ALL";
         n->name = expect_id(p);
         expect_op(p, "=");
         n->expr = parse_expr(p);
@@ -395,6 +397,7 @@ Node *parse_stmt(Parser *p) {
             p->t[p->i + 2].kind == T_OP && strcmp(p->t[p->i + 2].text, "]") == 0) {
             next(p); next(p); next(p);   /* int [ ] */
             Node *n = mk_node(N_ASSIGN);
+            n->vtype = "int[]";
             n->name = expect_id(p);
             if (is_op(p, "=")) {
                 next(p);
@@ -453,6 +456,7 @@ Node *parse_stmt(Parser *p) {
             is_assign_op(p->t[p->i + 2].text)) {
             next(p); /* type */
             Node *n = mk_node(N_ASSIGN);
+            n->vtype = t->text;
             n->name = next(p)->text;   /* variable name */
             n->op = next(p)->text;     /* = / += / -= etc. */
             n->expr = parse_expr(p);
@@ -546,8 +550,9 @@ static int is_assign_op(const char *s) {
 /* Parameter syntax (only form): parameter name parameter type, e.g. void add(a int, b int); array a int[];
  * The type can be a primitive type, or any type name / stream name (e.g. void show(cio CIO)).
  * Smart reference modifiers are also supported: void show(&r f io IO) — &permission follow parameter name type. */
-void parse_params(Parser *p, const char ***params, int *n) {
+void parse_params(Parser *p, const char ***params, int *n, const char ***ptypes) {
     const char **ps = aalloc(sizeof(char *) * 64);
+    const char **ts = aalloc(sizeof(char *) * 64);
     int n2 = 0;
     while (!is_op(p, ")") && !p->err) {
         /* &permission follow parameter name type */
@@ -562,17 +567,29 @@ void parse_params(Parser *p, const char ***params, int *n) {
                 fprintf(stderr, "syntax error: parameter syntax is 'name type' (e.g. a int), not %s\n", t->text);
                 p->err = 1; break;
             }
-            ps[n2++] = t->text;
+            int idx = n2;
+            ps[idx] = t->text;
+            int is_arr = 0;
             if (is_op(p, "[")) { next(p); expect_op(p, "]"); }
             /* type: primitive type or any identifier (stream name / class name) */
             if (peek(p)->kind == T_ID) {
-                if (is_type_name(peek(p)->text)) next(p);
-                else { next(p); if (is_op(p, "[")) { next(p); expect_op(p, "]"); } }
+                const char *ty = next(p)->text;
+                if (is_op(p, "[")) { next(p); expect_op(p, "]"); is_arr = 1; }
+                if (is_arr) {
+                    char buf[BIO_NAME_MAX];
+                    snprintf(buf, sizeof buf, "%s[]", ty);
+                    ts[idx] = astrdup(buf);
+                } else {
+                    ts[idx] = ty;
+                }
+            } else {
+                ts[idx] = "void";   /* backend rejects; interpreter never used types */
             }
+            n2++;
         }
         if (is_op(p, ",")) next(p);
     }
-    *params = ps; *n = n2;
+    *params = ps; *n = n2; *ptypes = ts;
 }
 
 /* return type: void or a type name (may carry a [] array suffix, e.g. int[]). Returns NULL when not at the start of a method */
@@ -635,7 +652,7 @@ void parse_methods(Parser *p, Method **methods, int *n) {
         m->ret_type = rt;
         m->name = expect_id(p);
         expect_op(p, "(");
-        parse_params(p, &m->params, &m->nparams);
+        parse_params(p, &m->params, &m->nparams, &m->param_types);
         expect_op(p, ")");
         expect_op(p, "{");
         m->stmts = parse_stmts_until(p, "}", &m->nstmts);
@@ -666,7 +683,7 @@ static void parse_members(Parser *p, Method **methods, int *nmethods, Field **fi
             m->ret_type = "void";
             m->name = expect_id(p);
             expect_op(p, "(");
-            parse_params(p, &m->params, &m->nparams);
+            parse_params(p, &m->params, &m->nparams, &m->param_types);
             expect_op(p, ")");
             if (is_op(p, "{")) {
                 next(p);
@@ -685,7 +702,7 @@ static void parse_members(Parser *p, Method **methods, int *nmethods, Field **fi
                 Method *m = &ms[nm++];
                 m->ret_type = rt;
                 m->name = name;
-                parse_params(p, &m->params, &m->nparams);
+                parse_params(p, &m->params, &m->nparams, &m->param_types);
                 expect_op(p, ")");
                 if (is_op(p, "{")) { next(p); m->stmts = parse_stmts_until(p, "}", &m->nstmts); }
                 else { expect_op(p, ";"); m->stmts = NULL; m->nstmts = 0; }
@@ -715,7 +732,7 @@ static void parse_members(Parser *p, Method **methods, int *nmethods, Field **fi
                 Method *m = &ms[nm++];
                 m->ret_type = astrdup(buf);
                 m->name = name;
-                parse_params(p, &m->params, &m->nparams);
+                parse_params(p, &m->params, &m->nparams, &m->param_types);
                 expect_op(p, ")");
                 if (is_op(p, "{")) { next(p); m->stmts = parse_stmts_until(p, "}", &m->nstmts); }
                 else { expect_op(p, ";"); m->stmts = NULL; m->nstmts = 0; }

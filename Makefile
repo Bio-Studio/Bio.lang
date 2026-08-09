@@ -24,6 +24,14 @@ PREFIX ?= $(or $(PROFILE_PREFIX),$(HOME)/.local)
 CFLAGS = -Wall -Wextra $(PROFILE_OPT) -Isrc $(PROFILE_CFLAGS) \
          -DBIO_CC='"$(PROFILE_CC)"' -DBIO_LDFLAGS='"$(PROFILE_LDFLAGS)"'
 
+# LLVM backend (bio-llvm target only; ordinary `make` stays LLVM-free).
+LLVM_CONFIG ?= llvm-config
+LLVM_CFLAGS = $(shell $(LLVM_CONFIG) --cflags)
+LLVM_LDFLAGS = $(shell $(LLVM_CONFIG) --ldflags) \
+               $(shell $(LLVM_CONFIG) --libs core native) \
+               $(shell $(LLVM_CONFIG) --system-libs)
+BIO_LLVM_BIN = $(BUILD_DIR)/bio-llvm
+
 # ---- Sources ---------------------------------------------------------------
 LIB  = src/arena.c src/lexer.c src/value.c src/builtin.c src/parser.c \
        src/interp.c src/bts.c src/compile.c src/toml.c src/project.c \
@@ -47,6 +55,14 @@ $(BUILD_DIR)/%.o: src/%.c src/bio.h src/platform.h
 
 $(LIBBIO): $(OBJS)
 	$(AR) rcs $@ $(OBJS)
+
+# Real AST -> LLVM IR -> native executable compiler (stage 1 subset).
+bio-llvm: $(BIO_LLVM_BIN)
+
+$(BIO_LLVM_BIN): src/main.c src/llvm.c src/llvm.h $(LIB) src/bio.h src/platform.h
+	-mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(LLVM_CFLAGS) -DBIO_HOME='"$(CURDIR)"' -o $@ \
+		src/main.c src/llvm.c $(LIB) $(LDFLAGS) $(LLVM_LDFLAGS)
 
 # ---- Install ---------------------------------------------------------------
 install: $(BIN)
@@ -89,4 +105,4 @@ profiles:
 clean:
 	-$(RM) $(BIN) $(LIBBIO) $(OBJS)
 
-.PHONY: all install install-lib bin clean-bin clean profiles info
+.PHONY: all bio-llvm install install-lib bin clean-bin clean profiles info

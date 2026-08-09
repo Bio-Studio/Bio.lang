@@ -61,7 +61,7 @@ Tok *tokenize(const char *src, int *ntok) {
             char b[3] = { p[0], p[1], 0 };
             toks[n].kind = T_OP; toks[n].text = astrdup(b); p += 2; n++; continue;
         }
-        if (strchr("+-*/=;,.(){}[]<>&@", *p)) {
+        if (strchr("+-*/%=;,.(){}[]<>&@", *p)) {
             char b[2] = { *p, 0 };
             toks[n].kind = T_OP; toks[n].text = astrdup(b); p++; n++; continue;
         }

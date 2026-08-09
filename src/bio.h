@@ -97,6 +97,7 @@ struct Node {
     double num;
     const char *str;          /* N_STR */
     const char *name;         /* N_VAR / N_ASSIGN var name / N_PROP property name */
+    const char *vtype;        /* N_ASSIGN: declared variable type ("int"/"float"/"double"/...) */
     const char *op;           /* N_BINOP operator / N_ASSIGN assignment operator / N_UNWRAP extractor ("res"/"cause") */
     Node *l, *r;              /* N_BINOP / N_PROP(base) / N_INDEX(base,idx) / N_UNWRAP(target) */
     const char *qual;         /* N_CALL: stream name */
@@ -124,6 +125,7 @@ typedef struct Method {
     const char *name;
     const char *ret_type;      /* void / int / float / double / string / char / int[] etc. */
     const char **params; int nparams;
+    const char **param_types;  /* parameter types, parallel to params */
     Node **stmts; int nstmts;
     int builtin;               /* non-zero = builtin implementation (e.g. B_ARS), no stmts */
     int write;                 /* @write annotation: method writes */

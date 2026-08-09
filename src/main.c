@@ -2,6 +2,15 @@
 #include "platform.h"
 #include <stdlib.h>
 
+/* LLVM backend lives in src/llvm.c and is linked only by the bio-llvm
+ * target. A weak reference keeps the ordinary interpreter binary independent
+ * of LLVM while still accepting `bio llvm` with a clear error. */
+#if defined(__GNUC__)
+__attribute__((weak)) int bio_llvm_compile(const char *file, const char *out);
+#else
+int bio_llvm_compile(const char *file, const char *out);
+#endif
+
 /* Entry point + demos */
 /* ═══════════════ Demos ═══════════════ */
 const char *DEMO1 =
@@ -376,6 +385,7 @@ static void print_usage(void) {
     printf("🧬 BioLang — interpret or compile .bio/.bl programs\n\n");
     printf("Usage:\n");
     printf("  bio <file>                    run (interpret) a script\n");
+    printf("  bio llvm <file> [-o out]  compile with the LLVM backend (make bio-llvm)\n");
     printf("  bio shell run <file>          run a script (interpret)\n");
     printf("  bio shell build <file> [-o out]  compile a script → executable\n");
     printf("  bio -e <bytes[K|M|G]>    set interpreter memory limit (0 = unlimited, default 256M)\n");
@@ -491,6 +501,27 @@ int main(int argc, char **argv) {
     if (argc > 1 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
         print_usage();
         return 0;
+    }
+    if (argc > 1 && strcmp(argv[1], "llvm") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "usage: bio llvm <file> [-o out]\n");
+            return 1;
+        }
+        const char *file = argv[2];
+        const char *out = NULL;
+        for (int i = 3; i < argc; i++) {
+            if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+                out = argv[++i];
+            } else {
+                fprintf(stderr, "usage: bio llvm <file> [-o out]\n");
+                return 1;
+            }
+        }
+        if (!bio_llvm_compile) {
+            fprintf(stderr, "LLVM backend is not linked into this binary; build it with `make bio-llvm`\n");
+            return 1;
+        }
+        return bio_llvm_compile(file, out);
     }
     /* ── Project commands ── */
     if (argc > 1 && strcmp(argv[1], "init") == 0 && argc > 2)
