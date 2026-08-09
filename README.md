@@ -114,6 +114,35 @@ bio shell build example.bio
 ./bin/example      # runs standalone, no bio required
 ```
 
+### Packaging (`.img` / `.zip`)
+
+Compiled products can be bundled into a single distributable package:
+
+```bash
+bio pack <out.img|.zip> [--entry NAME] <files...>
+bio unpack <pkg> [dir]   # extract a package
+bio run pkg.img          # run a package directly (executes its entry)
+bio run pkg.zip
+```
+
+- **`.img`** — a custom **raw image** format (`BIOIMG1`): a small directory
+  header followed by the files' bytes written directly. No compression, fully
+  seekable, extremely fast to pack and run.
+- **`.zip`** — standard zip archive (uses the system `zip`/`unzip` tools).
+
+`--entry NAME` marks which packed file is the runnable entry point
+(a compiled executable from `bio shell build`); `bio run` executes it
+(the entry is extracted with the executable bit set). For zip packages
+without an explicit entry, the first file is executed. Note that `.img`
+does not store file permissions — files extracted with `bio unpack` need
+`chmod +x` before running them directly.
+
+```bash
+bio shell build examples/01-hello.bio   # → bin/01-hello
+bio pack hello.img --entry 01-hello bin/01-hello
+bio run hello.img                       # runs the packaged entry
+```
+
 ## Examples
 
 The [`examples/`](examples/) directory contains runnable, heavily-commented programs that walk through the language feature by feature — a great way to learn what BioLang can do:
