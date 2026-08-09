@@ -16,3 +16,4 @@ biolang.c.mono
 # System / editor
 *.swp
 .DS_Store
+AGENTS.md
