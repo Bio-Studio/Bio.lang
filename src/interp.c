@@ -87,6 +87,7 @@ static int method_writes(Interp *in, Stream *s, Method *m, int depth) {
     (void)in;
     if (!m) return 0;
     if (m->write) return 1;
+    if (m->read) return 0;
     if (depth > 32) return 0;
     for (int i = 0; i < m->nstmts; i++)
         if (node_writes(in, m->stmts[i], s, depth)) return 1;
@@ -94,8 +95,10 @@ static int method_writes(Interp *in, Stream *s, Method *m, int depth) {
 }
 
 static int stream_method_is_write(Interp *in, Stream *s, const char *method) {
-    if ((s->builtin == B_FIO || s->sig_builtin == B_FIO) && fio_write_method(method)) return 1;
     Method *m = method_find(s, method);
+    /* Explicit @read/@write annotations take priority over heuristics. */
+    if (m && (m->write || m->read)) return m->write;
+    if ((s->builtin == B_FIO || s->sig_builtin == B_FIO) && fio_write_method(method)) return 1;
     if (m) return method_writes(in, s, m, 0);
     /* Signature streams carry their contract in Decls, not on the stream:
      * check the signature and its fork implementations too. */
@@ -901,7 +904,9 @@ void build(Interp *in) {
             else if (strcmp(d->sig, "CIO") == 0) s->sig_builtin = B_CIO;
             else if (strcmp(d->sig, "SIO") == 0) s->sig_builtin = B_SIO;
             for (Decl *sd = in->decls; sd; sd = sd->next)
-                if (sd->kind == D_SIG && strcmp(sd->name, d->sig) == 0 && sd->unfork) {
+                if (sd->unfork && (sd->kind == D_SIG || sd->kind == D_BIN ||
+                                   sd->kind == D_FORK || sd->kind == D_CLASS) &&
+                    strcmp(sd->name, d->sig) == 0) {
                     fprintf(stderr, "refused: stream %s is @unfork, cannot fork\n", d->sig);
                     s = NULL;
                     break;

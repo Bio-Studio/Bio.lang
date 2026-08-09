@@ -1,0 +1,93 @@
+// 15-annotations.bio
+// Teaches: stream and method annotations.
+//
+// @unfork refuses any later fork of the stream/class.
+// @onlyread refuses user calls to write methods.
+// @read/@write override the automatic write detection on methods.
+
+program main;
+
+// 1. @unfork on a signature stream: the fork below is refused at startup.
+Stream Sealed {
+    void ping();
+} @unfork
+Sealed BadFork {}       // startup prints the refusal and skips this fork
+
+// 2. @unfork on a class: `new` is the class fork path, so it is refused too.
+Class Frozen {
+    int n;
+} @unfork
+
+// 3. @onlyread: users may not call write methods. bump() is detected as a
+// write from its AST (it assigns a field), so the call is refused.
+Stream ReadOnly {
+    int count;
+    void bump();
+    int get();
+}
+ReadOnly RO {
+    void bump() { this::count = count + 1; } @write
+    int get() { res count; } @read
+} @onlyread
+
+// 4. @onlyread on another stream: same rule applies.
+Stream ReadOnlyAlias {
+    int n;
+    void touch();
+    int get();
+}
+ReadOnlyAlias RA {
+    void touch() { this::n = n + 1; } @write
+    int get() { res n; } @read
+} @onlyread
+
+// 5. @read/@write override automatic detection on @onlyread streams.
+Stream Guarded {
+    int state;
+    void hiddenWrite();
+    int markedWrite();
+    int markedRead();
+    int safeRead();
+}
+Guarded G {
+    void hiddenWrite() { this::state = 1; res ""; }
+    int markedWrite() { res 7; } @write
+    int markedRead() { hiddenWrite(); res state; } @read
+    int safeRead() { res state; } @read
+} @onlyread
+
+Main {
+    void exec() {
+        // The @unfork signature refusal was printed during startup; here the
+        // class fork path (new) refuses as well.
+        ALL f = new Frozen();
+        CIO::println("new @unfork class →", cause f);
+
+        // @onlyread: AST-based write detection refuses the write method.
+        CIO::println("onlyread get =", get RO::get());
+        CIO::println("onlyread bump →", cause RO::bump());
+
+        // @onlyread applies the same rule here too.
+        CIO::println("alias get =", get RA::get());
+        CIO::println("alias touch →", cause RA::touch());
+
+        // @write makes a body-looking-read method a write method.
+        CIO::println("marked write →", cause G::markedWrite());
+
+        // @read overrides the AST: hiddenWrite() looks like a write, but the
+        // outer markedRead() is explicitly read-only (internal writes are ok).
+        CIO::println("marked read =", get G::markedRead());
+        CIO::println("safe read =", get G::safeRead());
+    }
+}
+
+// Expected output:
+//   refused: stream Sealed is @unfork, cannot fork
+//   new @unfork class → Obj refused: class Frozen is @unfork, cannot fork
+//   onlyread get = 0
+//   onlyread bump → refused: stream RO is @onlyread — bump() is a write method
+//   alias get = 0
+//   alias touch → refused: stream RA is @onlyread — touch() is a write method
+//   marked write → refused: stream G is @onlyread — markedWrite() is a write method
+//   marked read = 1
+//   safe read = 1

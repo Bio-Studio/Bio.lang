@@ -501,6 +501,11 @@ Result *obj_request(const char *method, Value **args, int nargs) {
         if (nargs < 1 || args[0]->kind != V_STR) return mk_ref("Obj refused: new requires a class name");
         Decl *cls = find_class(in, args[0]->str);
         if (!cls) return mk_ref("Obj refused: no such class (declare Class first)");
+        if (cls->unfork) {
+            char buf[BIO_MSG_MAX];
+            snprintf(buf, sizeof buf, "Obj refused: class %s is @unfork, cannot fork", cls->name);
+            return mk_ref(astrdup(buf));
+        }
         Value *o = mk_obj(args[0]->str);
         o->obj_fields->parent = in->cur_area;
         /* An object is also a stream holding properties: materialize the class-declared fields onto the instance (with defaults) */

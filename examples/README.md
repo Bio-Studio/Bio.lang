@@ -26,6 +26,7 @@ bio shell build examples/01-hello.bio -o hello   # compile to a standalone execu
 | 12 | [12-computation.bio](12-computation.bio) | `Com` computation stream + `Time` timers |
 | 13 | [13-need.bio](13-need.bio) | Assumptions: `need value/function/stream/Class` |
 | 14 | [14-binary-lib.bio](14-binary-lib.bio) | Calling native C libraries (`Stream m & "libm.so.6"`) |
+| 15 | [15-annotations.bio](15-annotations.bio) | Annotations: `@unfork`, `@onlyread`, `@read`/`@write` |
 | proj | [project/](project/) | A complete project: `package.toml` + `src/` + `utils/` |
 
 ## Suggested learning path

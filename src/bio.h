@@ -125,6 +125,7 @@ typedef struct Method {
     Node **stmts; int nstmts;
     int builtin;               /* non-zero = builtin implementation (e.g. B_ARS), no stmts */
     int write;                 /* @write annotation: method writes */
+    int read;                  /* @read annotation: method is read-only */
 } Method;
 
 /* Field declaration (class/stream attributes; the original spec: every object/stream stores its own attributes) */

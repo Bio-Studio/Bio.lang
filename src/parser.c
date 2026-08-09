@@ -592,14 +592,15 @@ static const char *parse_ret_type(Parser *p) {
     return NULL;
 }
 
-/* Annotations written after a method:  void m() {...} @write */
+/* Annotations written after a method:  void m() {...} @read/@write */
 static void parse_method_annotations(Parser *p, Method *m) {
     while (is_op(p, "@")) {
         next(p);
         const char *a = expect_id(p);
         if (strcmp(a, "write") == 0) m->write = 1;
+        else if (strcmp(a, "read") == 0) m->read = 1;
         else {
-            fprintf(stderr, "syntax error: unknown method annotation @%s (only @write)\n", a);
+            fprintf(stderr, "syntax error: unknown method annotation @%s (only @read/@write)\n", a);
             p->err = 1;
         }
     }
