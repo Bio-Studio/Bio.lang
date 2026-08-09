@@ -5,7 +5,7 @@
  * outstanding pointer). New blocks are appended when the current one fills.
  *
  * Interpreted mode has a configurable upper limit (default 256 MiB, 0 =
- * unlimited); `-m` / BIO_MEM_LIMIT override it. Compiled products run with
+ * unlimited); `-e` / BIO_MEM_LIMIT override it. Compiled products run with
  * no limit unless BIO_MEM_LIMIT is set. */
 
 typedef struct ArenaBlock {

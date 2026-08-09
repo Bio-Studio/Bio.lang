@@ -378,10 +378,12 @@ static void print_usage(void) {
     printf("  bio <file>                    run (interpret) a script\n");
     printf("  bio shell run <file>          run a script (interpret)\n");
     printf("  bio shell build <file> [-o out]  compile a script → executable\n");
-    printf("  bio -m <bytes[K|M|G]>    set interpreter memory limit (0 = unlimited, default 256M)\n");
+    printf("  bio -e <bytes[K|M|G]>    set interpreter memory limit (0 = unlimited, default 256M)\n");
     printf("  bio --tokens <file>      dump tokens (debug)\n");
     printf("  bio init <name>          create a project skeleton (src/ utils/ package.toml)\n");
-    printf("  bio build [dir] [-o out] build a project (bundle needs, compile)\n");
+    printf("  bio build [dir] [-o out]  build a project (bundle needs, compile)\n");
+    printf("  bio build [dir] -s        build → standalone executable (default)\n");
+    printf("  bio build [dir] -m [out.img|out.zip]  build → .img/.zip package (app + platform CLI + libs)\n");
     printf("  bio run [dir]            run a project (bundle needs, interpret)\n");
     printf("  bio install [dir]        install deps from package.toml\n");
     printf("  bio destroy [dir]        remove build artifacts\n");
@@ -476,8 +478,10 @@ static int run_package(const char *pkg, int argc, char **argv, int start) {
 int main(int argc, char **argv) {
     const char *env_lim = getenv("BIO_MEM_LIMIT");
     if (env_lim && *env_lim) bio_set_mem_limit(parse_size(env_lim));
+    /* `-e` sets the interpreter memory limit; `-m` belongs to `bio build`
+     * (package mode). */
     for (int i = 1; i + 1 < argc; i++) {
-        if (strcmp(argv[i], "-m") == 0) {
+        if (strcmp(argv[i], "-e") == 0) {
             bio_set_mem_limit(parse_size(argv[i + 1]));
             for (int j = i; j + 2 < argc; j++) argv[j] = argv[j + 2];
             argc -= 2;
@@ -494,9 +498,33 @@ int main(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "build") == 0) {
         const char *dir = ".";
         const char *out = NULL;
-        if (argc > 2 && strcmp(argv[2], "-o") != 0) dir = argv[2];
-        if (argc > 3 && strcmp(argv[argc-2], "-o") == 0) out = argv[argc-1];
-        else if (argc > 2 && strcmp(argv[2], "-o") == 0 && argc > 3) { dir = "."; out = argv[3]; }
+        int pkg = 0, single = 0;
+        for (int i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) { out = argv[++i]; }
+            else if (strcmp(argv[i], "-m") == 0) {
+                /* Package mode: bundle app + platform CLI + libs into .img/.zip. */
+                pkg = 1;
+                if (i + 1 < argc && argv[i + 1][0] != '-') out = argv[++i];
+            }
+            else if (strcmp(argv[i], "-s") == 0) single = 1;   /* standalone executable */
+            else if (argv[i][0] != '-' && strcmp(dir, ".") == 0) dir = argv[i];
+            else {
+                fprintf(stderr, "usage: bio build [dir] [-s | -m [out.img|out.zip]] [-o out]\n");
+                return 1;
+            }
+        }
+        if (pkg && single) {
+            fprintf(stderr, "usage: -s (standalone) and -m (package) are mutually exclusive\n");
+            return 1;
+        }
+        if (pkg && !out) {
+            /* Default package name: bin/<project>.img */
+            char def[BIO_PATH_MAX];
+            snprintf(def, sizeof def, "bin/%s.img", project_name(dir));
+            char *o = aalloc(strlen(def) + 1);
+            strcpy(o, def);
+            out = o;
+        }
         return project_build(dir, out);
     }
     if (argc > 1 && strcmp(argv[1], "run") == 0) {

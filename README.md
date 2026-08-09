@@ -27,12 +27,11 @@ Main {
 |---|---|
 | Linux (x86-64, aarch64) | ✅ Fully supported |
 | macOS (Intel x86-64) | ⚠️ Works, but the ucontext-based thread backend triggers deprecation warnings |
-| macOS (Apple Silicon) | ⚠️ Not reliable — Apple's ucontext has known bugs and is slated for removal |
-| Windows | 🚧 Not yet supported (needs a Fiber-based thread backend and a dlopen → LoadLibrary shim) |
+| macOS (Apple Silicon) | ⚠️ Prebuilt release binaries work; building from source hits Apple's known-buggy ucontext |
+| Windows (x86-32/64, arm64) | ⚠️ Experimental — Fiber-based thread backend + LoadLibrary shim implemented; `make bin` cross-builds working packages (community testing welcome) |
 
 The codebase is clean C99 (builds warning-free with both gcc and clang); the
-portability gaps are all in OS APIs, not the language core. Porting is on the
-roadmap.
+portability gaps are all in OS APIs, not the language core.
 
 ## Building with profiles
 
@@ -85,11 +84,18 @@ A project has `package.toml` (manifest) + `src/` (source, `main.bio` is the entr
 
 ```bash
 bio init <name>           # create a project skeleton
-bio build [dir] [-o out]  # on-demand `need` bundling + validation + compile
+bio build [dir] -s        # build → standalone executable (default)
+bio build [dir] -m        # build → .img package (app + platform CLI + libs)
+bio build [dir] -m out.zip  # build → .zip package (format by extension)
+bio build [dir] [-o out]  # build, explicit output path
 bio run [dir]             # run a project (interpret)
 bio install [dir]         # install package.toml dependencies
 bio destroy [dir]         # remove build artifacts (.biolang/, app)
 ```
+
+`-s` (standalone) produces a single self-contained executable; `-m` (package)
+bundles the app together with the current platform's CLI and shared runtime
+into a distributable `.img` or `.zip` package (see [Packaging](#packaging-img--zip)).
 
 - **`need` bundling** — starting from the `main` entry, providers for every `need` are collected recursively (from `src/` + `utils/` + `.biolang/deps/`) until the closure stabilizes; **any `need` without a provider is an error**. A call by signature-stream name falls back to its implementation stream (`Calc::add` → implementation stream).
 - **package.toml** — standard fields `name`/`version`/`repo` + `[dependencies]` (`name = { version=.., repo=.. }`, `repo` optional).
@@ -125,17 +131,18 @@ bio run pkg.img          # run a package directly (executes its entry)
 bio run pkg.zip
 ```
 
-- **`.img`** — a custom **raw image** format (`BIOIMG1`): a small directory
+- **`.img`** — a custom **raw image** format (`BIOIMG1`, v2): a small directory
   header followed by the files' bytes written directly. No compression, fully
-  seekable, extremely fast to pack and run.
-- **`.zip`** — standard zip archive (uses the system `zip`/`unzip` tools).
+  seekable, extremely fast. **File permissions are stored**, so unpacked
+  executables keep their executable bit.
+- **`.zip`** — standard zip archive, written and read **natively with the
+  STORE method** (no compression). No external `zip`/`unzip` tools required,
+  works on every platform. When the system `unzip` is present it is used for
+  unpacking (so legacy deflate archives still open).
 
 `--entry NAME` marks which packed file is the runnable entry point
-(a compiled executable from `bio shell build`); `bio run` executes it
-(the entry is extracted with the executable bit set). For zip packages
-without an explicit entry, the first file is executed. Note that `.img`
-does not store file permissions — files extracted with `bio unpack` need
-`chmod +x` before running them directly.
+(a compiled executable from `bio shell build`); `bio run` executes it. For zip
+packages without an explicit entry, the first file is executed.
 
 ```bash
 bio shell build examples/01-hello.bio   # → bin/01-hello

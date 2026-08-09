@@ -346,7 +346,7 @@ static int link_project(const char *out, const char *objdir, int nfiles,
     return bio_run(av);
 }
 
-static const char *project_name(const char *dir) {
+const char *project_name(const char *dir) {
     static char name[BIO_NAME_MAX] = "app";
     char *toml = join(dir, "package.toml");
     FILE *f = fopen(toml, "r");

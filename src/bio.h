@@ -265,6 +265,7 @@ const char *global_repo(void);                        /* resolve the default rep
 int project_init(const char *name);                   /* bio init */
 int project_build(const char *dir, const char *out);  /* bio build */
 int project_run(const char *dir);                     /* bio run */
+const char *project_name(const char *dir);            /* package.toml name ("app" fallback) */
 int project_install(const char *dir);                 /* bio install */
 int project_destroy(const char *dir);                 /* bio destroy */
 int truthy(Value *v);
