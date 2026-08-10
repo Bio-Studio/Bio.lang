@@ -6,6 +6,7 @@
 const vscode = require('vscode');
 const { execFile, spawn } = require('child_process');
 const path = require('path');
+const { formatBioLang } = require('./formatter');
 
 /* Method tables for the builtin substreams */
 const STREAMS = {
@@ -580,7 +581,20 @@ function activate(context) {
     });
   });
 
-  context.subscriptions.push(provider, runFile, compileFile, projectInit, projectBuild, projectRun, projectInstall, projectDestroy, runDemo);
+  /* Document formatting (Shift+Alt+F): conservative indent/space
+   * normalization; strings and comments are left untouched. */
+  const formatter = vscode.languages.registerDocumentFormattingProvider('biolang', {
+    provideDocumentFormattingEdits(document) {
+      const text = document.getText();
+      const formatted = formatBioLang(text);
+      if (formatted === text) return [];
+      const fullRange = new vscode.Range(document.positionAt(0),
+                                         document.positionAt(text.length));
+      return [vscode.TextEdit.replace(fullRange, formatted)];
+    }
+  });
+
+  context.subscriptions.push(provider, formatter, runFile, compileFile, projectInit, projectBuild, projectRun, projectInstall, projectDestroy, runDemo);
 }
 
 function deactivate() {}

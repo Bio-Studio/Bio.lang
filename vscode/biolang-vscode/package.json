@@ -1,8 +1,8 @@
 {
   "name": "biolang",
   "displayName": "BioLang",
-  "description": "BioLang language support: syntax highlighting, snippets, completions, run commands (bio CLI)",
-  "version": "0.15.0",
+  "description": "BioLang language support: syntax highlighting, snippets, completions, formatter, run commands (bio CLI)",
+  "version": "0.16.0",
   "publisher": "bio",
   "license": "MIT",
   "engines": {
