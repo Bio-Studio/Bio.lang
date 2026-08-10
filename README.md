@@ -1,5 +1,9 @@
 # BioLang — A Stream-Oriented Language in C (Interpreter + Compiler)
 
+<p align="center">
+  <img src="assets/badges.svg" alt="BioLang: v0.4.0 · MIT · C · LLVM · zig · 7-language docs" width="640">
+</p>
+
 BioLang is an **open-source, C-based programming language** that runs as both an **interpreter** and a **compiler**. Its design is **stream-oriented**: every operation is a *request* that can be *responded* (`res`) or *refused* (`cause`). Write a `.bio` file and either interpret it with `bio`, or compile it into a **standalone native executable** with `bio shell build`. MIT licensed.
 
 ```bio
