@@ -17,3 +17,7 @@ biolang.c.mono
 *.swp
 .DS_Store
 AGENTS.md
+
+# MPS generated
+classes_gen/
+source_gen.caches/
