@@ -7,16 +7,21 @@
 ## 0. 实现路径（2026-08-22 用户拍板：完全原生，不借助 MPS）
 
 - 词法器、AST、解析器、内存核心全部**手写 Rust**；
-- MPS 语言模型（structure.mps 43 概念）保留为语言设计文档/对照，
-  不再驱动代码生成；`tools/mps_gen_rust.py` 与 `ast_generated.rs`
-  保留作历史对照（不参与编译主路径，`bio-syntax` 导出的是手写 `ast`）；
-- 原生路径优势：AST 形态贴合解析器需求（span/所有权/枚举化），
-  内存规划完全掌控（arena 句柄化、Value 16B、零拷贝 token）。
+- **标准层定义（不改变）**：
+  1. 词法/语法标准 = 旧 C 实现（git 891add2^:src/lexer.c + parser.c）——
+     关键字表、运算符集、语句/声明形态逐字对齐；
+  2. 语义标准 = DESIGN.md（流模型/请求模型/智能引用 28 型）；
+  3. 回归标准 = examples/01-17 输出（tests/examples.rs 固化 parse 层）；
+  4. 工具链标准 = vscode/biolang-vscode（已恢复 0.16.0，含高亮/补全/格式化）。
+- MPS 语言模型（structure.mps 43 概念）是语言设计文档（8-13 迁移产物），
+  不驱动代码生成，**不替代上述标准**；
+- `tools/mps_gen_rust.py` 与 `ast_generated.rs` 仅历史对照，
+  `bio-syntax` 导出的是手写 `ast`。
 
 ## 1. 现状
 
-- 2026-08-13：旧 C 实现（解释器 + LLVM 后端 + 打包）整体移除（git 提交 891add2），
-  仓库变为 **JetBrains MPS 语言工作台** + examples 回归集 + 预编译 bin/。
+- 2026-08-13：旧 C 实现 + VSCode 插件随 MPS 迁移提交（891add2）整体移除；
+  2026-08-22 插件已从 git 历史恢复（vscode/biolang-vscode 0.16.0）。
 - `bin/` 预编译二进制（gitignore）：`bio` 解释器可用；`bio shell build`
   编译模式因引用已删除的 `src/` 而失效——**编译能力待 Rust 实现补回**。
 
@@ -49,7 +54,10 @@
 - **M1 ✅** 手写词法器 + arena/value 内存核心（10 测试）
 - **M2 ✅** 手写 AST + 完整解析器：examples/01-17 + project 共 20 文件
   全量 parse 通过（固化为集成测试 examples.rs）；17 解析器单测；
-  语法面：流签名/分叉/类/need/注解/智能引用/数组字面量/多返回值/二进制库流
+  语法面：流签名/分叉/类/need/注解/智能引用/数组字面量/多返回值/二进制库流；
+  **标准对齐（21:40 修正）**：关键字表与旧 lexer.c 逐字一致（22 个，
+  含 value/function/overwrite；get/this/type/int 等为普通标识符）；
+  删除非标准扩展（&& || 逻辑运算、一元负号、true/false 字面量）
 - **M3** 解释器：流注册表（CIO/FIO/SIO/Com/Time/Rem/Solid/Array/Ref/Threads/Taskm…）、
   need 依赖解析、项目 CLI（init/build/run/install/destroy）、.img/.zip 打包
 - **M4** LLVM 后端：AST→IR 文本（参考旧 `src/llvm.c`），统一 double 语义，

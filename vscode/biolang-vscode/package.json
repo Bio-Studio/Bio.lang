@@ -1,0 +1,120 @@
+{
+  "name": "biolang",
+  "displayName": "BioLang",
+  "description": "BioLang language support: syntax highlighting, snippets, completions, formatter, run commands (bio CLI)",
+  "version": "0.16.0",
+  "publisher": "bio",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "biolang",
+        "aliases": [
+          "BioLang",
+          "biolang"
+        ],
+        "extensions": [
+          ".bl",
+          ".bio"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "biolang",
+        "scopeName": "source.biolang",
+        "path": "./syntaxes/biolang.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "biolang",
+        "path": "./snippets/biolang.code-snippets"
+      }
+    ],
+    "commands": [
+      {
+        "command": "biolang.runFile",
+        "title": "BioLang: Run current file (bio)"
+      },
+      {
+        "command": "biolang.compileFile",
+        "title": "BioLang: Compile current file (bio shell build)"
+      },
+      {
+        "command": "biolang.projectInit",
+        "title": "BioLang: Create project"
+      },
+      {
+        "command": "biolang.projectBuild",
+        "title": "BioLang: Build project"
+      },
+      {
+        "command": "biolang.projectRun",
+        "title": "BioLang: Run project"
+      },
+      {
+        "command": "biolang.projectInstall",
+        "title": "BioLang: Install project dependencies"
+      },
+      {
+        "command": "biolang.projectDestroy",
+        "title": "BioLang: Destroy project build artifacts"
+      },
+      {
+        "command": "biolang.runDemo",
+        "title": "BioLang: Run built-in demos"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "when": "resourceLangId == biolang",
+          "command": "biolang.runFile",
+          "group": "navigation"
+        },
+        {
+          "when": "resourceLangId == biolang",
+          "command": "biolang.compileFile",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "biolang.runFile",
+          "when": "resourceLangId == biolang"
+        },
+        {
+          "command": "biolang.compileFile",
+          "when": "resourceLangId == biolang"
+        },
+        {
+          "command": "biolang.projectInit"
+        },
+        {
+          "command": "biolang.projectBuild"
+        },
+        {
+          "command": "biolang.projectRun"
+        },
+        {
+          "command": "biolang.projectInstall"
+        },
+        {
+          "command": "biolang.projectDestroy"
+        },
+        {
+          "command": "biolang.runDemo"
+        }
+      ]
+    }
+  }
+}
