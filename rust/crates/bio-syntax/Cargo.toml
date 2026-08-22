@@ -1,0 +1,8 @@
+[package]
+name = "bio-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "BioLang 语法层：MPS 生成的 AST 类型 + 手写词法器"
+
+[dependencies]

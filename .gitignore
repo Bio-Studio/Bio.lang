@@ -21,3 +21,4 @@ AGENTS.md
 # MPS generated
 classes_gen/
 source_gen.caches/
+/rust/target/
