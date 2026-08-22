@@ -2,7 +2,7 @@
 // 源：languages/biolang/languageModels/structure.mps（JetBrains MPS 语言模型）
 // 手动优化：复制本文件为 ast.rs 后修改（内存规划：arena 索引、紧凑布局）。
 // @generated
-#![allow(dead_code, non_camel_case_types)]
+#![allow(dead_code, non_camel_case_types, non_snake_case)]
 
 pub const CONCEPT_COUNT: usize = 43;
 

@@ -22,3 +22,5 @@ AGENTS.md
 classes_gen/
 source_gen.caches/
 /rust/target/
+__pycache__/
+*.pyc

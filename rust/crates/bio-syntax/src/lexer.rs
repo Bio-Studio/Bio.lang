@@ -78,7 +78,7 @@ fn is_ident_char(c: u8) -> bool {
 fn is_op1(c: u8) -> bool {
     matches!(c, b'+' | b'-' | b'*' | b'/' | b'%' | b'<' | b'>' | b'=' | b'!'
               | b'&' | b'|' | b'.' | b':' | b',' | b';' | b'(' | b')'
-              | b'{' | b'}' | b'[' | b']')
+              | b'{' | b'}' | b'[' | b']' | b'@')
 }
 
 fn is_digit(c: u8) -> bool {
