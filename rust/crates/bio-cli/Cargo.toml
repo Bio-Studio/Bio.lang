@@ -6,7 +6,7 @@ license.workspace = true
 description = "BioLang Rust 实现 CLI（Rust+LLVM 重写阶段 M1）"
 
 [[bin]]
-name = "bio-rs"
+name = "bbb"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,12 +1,58 @@
 /**
- * BioLang VSCode extension — entry
- * Features: syntax highlighting, code snippets, run commands (bio CLI),
- * stream method completion (Qual::), smart-reference completion (&)
+ * BBB (BiuBiuBiu) VSCode extension — entry
+ * Features: syntax highlighting, code snippets, run commands (bbb CLI),
+ * stream method completion (Qual::), smart-reference completion (&),
+ * Rust-wasm formatter (format/format_len exports from bbb-wasm crate).
  */
 const vscode = require('vscode');
 const { execFile, spawn } = require('child_process');
 const path = require('path');
-const { formatBioLang } = require('./formatter');
+const { formatBioLang } = require('./formatter'); // JS fallback
+
+/* Rust wasm formatter (bbb-wasm crate). Falls back to JS formatter on load failure. */
+let wasmFormat = null;
+let wasmLoaded = false;
+
+function loadWasmFormatter() {
+  try {
+    const fs = require('fs');
+    const wasmPath = path.join(__dirname, 'wasm', 'bbb_wasm.wasm');
+    const bytes = fs.readFileSync(wasmPath);
+    const mod = new WebAssembly.Module(bytes);
+    const inst = new WebAssembly.Instance(mod, {});
+    wasmFormat = (src) => {
+      const enc = new TextEncoder();
+      const input = enc.encode(src);
+      return formatViaWasm(inst, input);
+    };
+    wasmLoaded = true;
+  } catch (e) {
+    wasmLoaded = false;
+    wasmFormat = null;
+  }
+}
+
+function formatViaWasm(inst, input) {
+  const mem = inst.exports.memory;
+  const pageSize = 65536;
+  // grow memory to fit input + output (2x input + 64k headroom)
+  const needed = input.length + 65536;
+  const cur = mem.buffer.byteLength;
+  const grow = Math.ceil(Math.max(0, needed - cur) / pageSize);
+  if (grow > 0) inst.exports.memory.grow(grow);
+  const buf = new Uint8Array(mem.buffer);
+  const inPtr = 16; // past the first page header (wasm memory starts clean)
+  buf.set(input, inPtr);
+  const outCap = input.length * 4 + 4096;
+  const outPtr = inPtr + input.length + 8;
+  const needed2 = outPtr + outCap;
+  if (needed2 > mem.buffer.byteLength) {
+    inst.exports.memory.grow(Math.ceil((needed2 - mem.buffer.byteLength) / pageSize));
+  }
+  const n = inst.exports.format(inPtr, input.length, outPtr, outCap);
+  if (n === 0) return null;
+  return new TextDecoder().decode(new Uint8Array(mem.buffer, outPtr, n));
+}
 
 /* Method tables for the builtin substreams */
 const STREAMS = {
@@ -581,12 +627,19 @@ function activate(context) {
     });
   });
 
-  /* Document formatting (Shift+Alt+F): conservative indent/space
-   * normalization; strings and comments are left untouched. */
+  /* Document formatting (Shift+Alt+F): Rust wasm formatter (bbb-wasm),
+   * falls back to the JS formatter if the wasm cannot be loaded. */
+  loadWasmFormatter();
   const formatter = vscode.languages.registerDocumentFormattingProvider('biolang', {
     provideDocumentFormattingEdits(document) {
       const text = document.getText();
-      const formatted = formatBioLang(text);
+      let formatted = null;
+      if (wasmLoaded && wasmFormat) {
+        try { formatted = wasmFormat(text); } catch (e) { formatted = null; }
+      }
+      if (formatted === null || formatted === undefined) {
+        formatted = formatBioLang(text); // JS fallback
+      }
       if (formatted === text) return [];
       const fullRange = new vscode.Range(document.positionAt(0),
                                          document.positionAt(text.length));

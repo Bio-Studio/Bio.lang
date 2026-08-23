@@ -1,4 +1,4 @@
-//! bio-rs — BioLang Rust 实现 CLI（M3：解释器可用）。
+//! bbb — BiuBiuBiu 语言 CLI（Rust 实现，2026-08-23 更名）。
 //!
 //! 里程碑（见仓库根 RUST-PLAN.md）：
 //! - M1 ✅ 手写词法器 + 内存核心（arena/value）
@@ -202,7 +202,7 @@ fn main() -> ExitCode {
                 }
             },
             None => {
-                eprintln!("用法：bio-rs lexer <file>");
+                eprintln!("用法：bbb lexer <file>");
                 ExitCode::FAILURE
             }
         },
@@ -215,7 +215,7 @@ fn main() -> ExitCode {
                 }
             },
             None => {
-                eprintln!("用法：bio-rs parse <file>");
+                eprintln!("用法：bbb parse <file>");
                 ExitCode::FAILURE
             }
         },
@@ -228,7 +228,7 @@ fn main() -> ExitCode {
                 }
             },
             None => {
-                eprintln!("用法：bio-rs run <file|dir>");
+                eprintln!("用法：bbb run <file|dir>");
                 ExitCode::FAILURE
             }
         },
@@ -241,7 +241,7 @@ fn main() -> ExitCode {
                 }
             },
             None => {
-                eprintln!("用法：bio-rs llvm <file>");
+                eprintln!("用法：bbb llvm <file>");
                 ExitCode::FAILURE
             }
         },
@@ -251,7 +251,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("--version" | "-V") => {
-            println!("bio-rs {}", env!("CARGO_PKG_VERSION"));
+            println!("bbb {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         _ => {

@@ -1,10 +1,10 @@
-# BioLang — A Stream-Oriented Language in C (Interpreter + Compiler)
+# BiuBiuBiu — A Stream-Oriented Language (Rust: Interpreter + LLVM Compiler)
 
 <p align="center">
-  <img src="assets/badges.svg" alt="BioLang: v0.4.0 · MIT · C · LLVM · zig · 7-language docs" width="640">
+  <img src="assets/badges.svg" alt="BiuBiuBiu: v0.4.0 · MIT · Rust · LLVM · 7-language docs" width="640">
 </p>
 
-BioLang is an **open-source, C-based programming language** that runs as both an **interpreter** and a **compiler**. Its design is **stream-oriented**: every operation is a *request* that can be *responded* (`res`) or *refused* (`cause`). Write a `.bio` file and either interpret it with `bio`, or compile it into a **standalone native executable** with `bio shell build`. MIT licensed.
+BiuBiuBiu (formerly BioLang) is an **open-source programming language written in Rust**, running as both an **interpreter** (`bbb run`) and an **LLVM compiler** (`bbb llvm`). Its design is **stream-oriented**: every operation is a *request* that can be *responded* (`res`) or *refused* (`cause`). Write a `.bio` file and either interpret it with `bbb`, or compile it into a **standalone native executable**. MIT licensed.
 
 ```bio
 program main;

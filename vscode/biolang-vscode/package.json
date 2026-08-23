@@ -1,7 +1,7 @@
 {
-  "name": "biolang",
-  "displayName": "BioLang",
-  "description": "BioLang language support: syntax highlighting, snippets, completions, formatter, run commands (bio CLI)",
+  "name": "bbb",
+  "displayName": "BBB — BiuBiuBiu",
+  "description": "BBB (BiuBiuBiu) language support: syntax highlighting, snippets, completions, formatter (Rust wasm), run commands (bbb CLI)",
   "version": "0.16.0",
   "publisher": "bio",
   "license": "MIT",
@@ -116,5 +116,9 @@
         }
       ]
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Bio-Studio/Bio.lang.git"
   }
 }
