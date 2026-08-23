@@ -14,7 +14,7 @@
 //! - **REFUSED 位**：`ref "原因"` 产生的请求结果 = 同值 + 标志位，
 //!   不额外分配；`get`/`cause` 只是位测试；
 //! - `Outcome`：解释器内部用，`Res(Value)` / `Ref(Cause)` 二态，
-//!   与 MPS 概念（ResStatement/RefStatement）一一对应。
+//!   与语法层 ResStatement/RefStatement 一一对应。
 //!
 //! # 类型标签（低 24 位）
 //!

@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "bbb-cli"
-version = "0.4.0"
+version = "1.0.0"
 dependencies = [
  "bbb-core",
  "bbb-llvm",
@@ -14,22 +14,22 @@ dependencies = [
 
 [[package]]
 name = "bbb-core"
-version = "0.4.0"
+version = "1.0.0"
 
 [[package]]
 name = "bbb-llvm"
-version = "0.4.0"
+version = "1.0.0"
 dependencies = [
  "bbb-syntax",
 ]
 
 [[package]]
 name = "bbb-syntax"
-version = "0.4.0"
+version = "1.0.0"
 
 [[package]]
 name = "bbb-vm"
-version = "0.4.0"
+version = "1.0.0"
 dependencies = [
  "bbb-core",
  "bbb-syntax",
@@ -37,7 +37,7 @@ dependencies = [
 
 [[package]]
 name = "bbb-wasm"
-version = "0.4.0"
+version = "1.0.0"
 dependencies = [
  "bbb-syntax",
 ]

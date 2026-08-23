@@ -22,7 +22,8 @@
 ## 1. 现状
 
 - 2026-08-13：旧 C 实现 + VSCode 插件随 MPS 迁移提交（891add2）整体移除；
-  2026-08-22 插件已从 git 历史恢复（vscode/biolang-vscode 0.16.0）。
+  2026-08-22 插件已从 git 历史恢复（vscode/bbb-vscode）；2026-08-23
+  MPS 相关内容全部移除。
 - `bin/` 预编译二进制（gitignore）：`bio` 解释器可用；`bio shell build`
   编译模式因引用已删除的 `src/` 而失效——**编译能力待 Rust 实现补回**。
 
@@ -43,7 +44,7 @@
 2. **字符串字节池**：`StrRef(off,len)` 8 字节，写入即 intern，取用零拷贝。
 3. **Value 16 字节**：`u64 负载 + u32 tag（bit31=REFUSED）+ pad`；
    标量（int/float/double/bool/char）全内联，字符串/对象/数组走句柄。
-4. **请求模型**：`ref` = tag 置位，零分配；`Outcome::Res/Ref` 与 MPS 概念
+4. **请求模型**：`ref` = tag 置位，零分配；`Outcome::Res/Ref` 与语法层
    ResStatement/RefStatement 一一对应；`get`/`cause` 是位测试。
 5. **流区域划分**：每个流（Unistream/Remstream/Threadstream…）在 arena 内
    拥有自己的页区；协作式调度 ⇒ 无锁。
@@ -85,5 +86,5 @@
 
 - 语法细节一律以 examples + 旧 C 源码为准（注释/字符串/char/数字词法、
   need 语义、智能引用 7 权限 × 4 层级 = 28 型、Solid 头指针语义…）
-- 手写 AST（ast.rs）是唯一事实源；ast_generated.rs 仅历史对照
+- 手写 AST（ast.rs）是唯一事实源
 - 切换 Rust 工具链用 `~/.cargo/bin/cargo`（本机 PATH 未含）

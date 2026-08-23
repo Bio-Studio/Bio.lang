@@ -2,7 +2,7 @@
   "name": "bbb",
   "displayName": "BBB — BiuBiuBiu",
   "description": "BBB (BiuBiuBiu) language support: syntax highlighting, snippets, completions, formatter (Rust wasm), run commands (bbb CLI)",
-  "version": "0.16.0",
+  "version": "1.0.0",
   "publisher": "bio",
   "license": "MIT",
   "engines": {
