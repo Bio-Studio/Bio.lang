@@ -1,0 +1,13 @@
+program main;
+
+Main {
+    void exec() {
+        Array a = new Array(3);
+        a::set(0, 30); a::set(1, 10); a::set(2, 20);
+        // 直接看 a 的属性
+        CIO::println("len:", get a::len());
+        CIO::println("data type check");
+        // 用 Arrays::all 拿注册表看
+        CIO::println("count:", get Arrays::count());
+    }
+}

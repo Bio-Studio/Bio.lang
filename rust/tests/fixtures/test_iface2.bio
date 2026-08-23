@@ -1,0 +1,26 @@
+program main;
+
+Interface Shape {
+    double area();
+}
+
+Class Circle implements Shape {
+    double area() { res 3.14 * this::r * this::r; }
+    double r;
+}
+
+Class Square implements Shape {
+    double area() { res this::side * this::side; }
+    double side;
+}
+
+Main {
+    void exec() {
+        Shape s = new Circle();
+        s::r = 2.0;
+        CIO::println("circle area:", get s::area());
+        Shape t = new Square();
+        t::side = 3.0;
+        CIO::println("square area:", get t::area());
+    }
+}

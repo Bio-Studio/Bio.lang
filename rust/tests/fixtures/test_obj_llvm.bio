@@ -1,0 +1,25 @@
+program main;
+
+Class Student {
+    void __init__(age int, solve double) {
+        this::age = age;
+        this::solve = solve;
+    }
+    int getAge() { res this::age; }
+    double getSolve() { res this::solve; }
+    void bump() { this::age = this::age + 1; }
+    int age;
+    double solve;
+}
+
+Main {
+    void exec() {
+        Student s = new Student(12, 1.2);
+        CIO::println("age:", get s::getAge());
+        CIO::println("solve:", get s::getSolve());
+        s::bump();
+        CIO::println("after bump:", get s::getAge());
+        s::age = 20;
+        CIO::println("direct:", s::age);
+    }
+}
