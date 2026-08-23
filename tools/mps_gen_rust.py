@@ -4,8 +4,8 @@
 以 JetBrains MPS 语言工作台的语言定义（languages/biolang/languageModels/
 structure.mps，43 个概念）为唯一事实源，生成 Rust 实现骨架：
 
-  rust/crates/bio-syntax/src/ast_generated.rs   # AST 类型（struct/enum/ConceptKind）
-  rust/crates/bio-syntax/src/concepts_generated.rs  # 概念注册表（id/alias/父级）
+  rust/crates/bbb-syntax/src/ast_generated.rs   # AST 类型（struct/enum/ConceptKind）
+  rust/crates/bbb-syntax/src/concepts_generated.rs  # 概念注册表（id/alias/父级）
 
 生成产物带 GENERATED 标记，禁止手改。手动优化流程：
 1. 复制 ast_generated.rs → ast.rs

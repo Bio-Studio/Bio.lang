@@ -4,7 +4,7 @@
   <img src="assets/badges.svg" alt="BiuBiuBiu: v0.4.0 · MIT · Rust · LLVM · 7-language docs" width="640">
 </p>
 
-BiuBiuBiu (formerly BioLang) is an **open-source programming language written in Rust**, running as both an **interpreter** (`bbb run`) and an **LLVM compiler** (`bbb llvm`). Its design is **stream-oriented**: every operation is a *request* that can be *responded* (`res`) or *refused* (`cause`). Write a `.bio` file and either interpret it with `bbb`, or compile it into a **standalone native executable**. MIT licensed.
+BiuBiuBiu (formerly BiuBiuBiu) is an **open-source programming language written in Rust**, running as both an **interpreter** (`bbb run`) and an **LLVM compiler** (`bbb llvm`). Its design is **stream-oriented**: every operation is a *request* that can be *responded* (`res`) or *refused* (`cause`). Write a `.bio` file and either interpret it with `bbb`, or compile it into a **standalone native executable**. MIT licensed.
 
 ```bio
 program main;
@@ -20,7 +20,7 @@ Main {
 - **Streams everywhere** — streams are first-class values that can be forked, passed as arguments, and composed.
 - **Request/response model** — `res` responds, `ref` refuses; unwrap the actual value with `get X` and the refusal reason with `cause X`.
 - **Objects & classes** — `Class` declarations, `new`, automatic `__init__`, `this`, object methods.
-- **Interpret or compile** — `bio` interprets; `bio shell build` emits a self-contained native executable (no `bio` needed at runtime).
+- **Interpret or compile** — `bbb` interprets; `bbb shell build` emits a self-contained native executable (no `bbb` needed at runtime).
 - **Concurrency** — cooperative threads (`Threads`) and a round-robin task manager (`Taskm`).
 - **Binary interop** — link native `.so` libraries and call their exported functions as stream methods (`Stream m & "libm.so"` → `m::sin(0)`).
 - **Smart references** — typed references `&perm follow base` (permission = any stack of `r/w/m`: r, w, m, rw, rm, wm, rwm × follow `u/f/a/t` = 28 types), generic over any base type; `p = &a[0]`, `get p`, and `p++` moves the pointer (m).
@@ -60,22 +60,22 @@ A profile is a single file in [profiles/](profiles/) that sets `PROFILE_CC`,
 `PROFILE_PREFIX` and a one-line `PROFILE_DESC`. To add one, copy an existing
 profile and tweak it — no other changes needed.
 
-- `bio shell build` reuses the profile's compiler and link flags, so a compiled
-  executable matches how `bio` itself was built.
+- `bbb shell build` reuses the profile's compiler and link flags, so a compiled
+  executable matches how `bbb` itself was built.
 - **Switching profiles requires `make clean`** — make tracks timestamps, not
   variable values.
 - Command-line overrides still win: `make PROFILE=linux-gcc CC=clang` uses
-  clang for `bio`, but `bio shell build` still uses the profile's compiler (documented
+  clang for `bbb`, but `bbb shell build` still uses the profile's compiler (documented
   behavior).
 
 ## Build & run
 
 ```bash
-make              # build → ./bio (also builds libbio.a for the compiler)
+make              # build → ./bio (also builds libbbb.a for the compiler)
 make install      # install to ~/.local/bin/bio
 
 bio               # run the 13 built-in demos
-bio program.bio   # run a BioLang source file (interpret)
+bio program.bio   # run a BiuBiuBiu source file (interpret)
 bio shell run program.bio # explicit run (interpret)
 bio shell build program.bio [-o output]  # compile → self-contained native executable
 bio --tokens x.bl # dump lexer tokens (debug)
@@ -115,9 +115,9 @@ version = "0.1.0"
 libfoo = { version = "1.0.0", repo = "/path/to/libfoo" }   # or a git/http URL
 ```
 
-### Script compile (`bio shell build`)
+### Script compile (`bbb shell build`)
 
-`bio shell build program.bio` compiles a program into a **self-contained native executable** (source embedded + interpreter runtime linked via `libbio.a`). At runtime it needs neither `bio` nor the source. The default output path is `bin/<name>` (`example.bio` → `bin/example`); use `-o` to override.
+`bbb shell build program.bio` compiles a program into a **self-contained native executable** (source embedded + interpreter runtime linked via `libbbb.a`). At runtime it needs neither `bbb` nor the source. The default output path is `bin/<name>` (`example.bio` → `bin/example`); use `-o` to override.
 
 ```bash
 bio shell build example.bio
@@ -145,7 +145,7 @@ bio run pkg.zip
   unpacking (so legacy deflate archives still open).
 
 `--entry NAME` marks which packed file is the runnable entry point
-(a compiled executable from `bio shell build`); `bio run` executes it. For zip
+(a compiled executable from `bbb shell build`); `bbb run` executes it. For zip
 packages without an explicit entry, the first file is executed.
 
 ```bash
@@ -156,7 +156,7 @@ bio run hello.img                       # runs the packaged entry
 
 ## Examples
 
-The [`examples/`](examples/) directory contains runnable, heavily-commented programs that walk through the language feature by feature — a great way to learn what BioLang can do:
+The [`examples/`](examples/) directory contains runnable, heavily-commented programs that walk through the language feature by feature — a great way to learn what BiuBiuBiu can do:
 
 | Example | Teaches |
 |---|---|
@@ -174,7 +174,7 @@ The [`examples/`](examples/) directory contains runnable, heavily-commented prog
 | [examples/12-computation.bio](examples/12-computation.bio) | `Com` computation stream + `Time` timers |
 | [examples/13-need.bio](examples/13-need.bio) | `need value/function/stream/Class` assumptions |
 | [examples/14-binary-lib.bio](examples/14-binary-lib.bio) | Binary library streams (`Stream m & "libm.so"`) |
-| [examples/project/](examples/project/) | A complete project: package.toml + src/ + utils/ (run with `bio build`/`bio run`) |
+| [examples/project/](examples/project/) | A complete project: package.toml + src/ + utils/ (run with `bbb build`/`bbb run`) |
 
 Run any example with:
 
@@ -194,7 +194,7 @@ src/
 ├── builtin.c    # builtin streams (CIO/FIO/SIO/IO/Com/Time/Rem/Solid/Array/Ref/...)
 ├── bts.c        # Threads cooperative threads + Taskm task scheduler
 ├── interp.c     # interpreter (stream registry, eval, assumption checks, run_source)
-├── compile.c    # compiler (bio shell build: embed source + link libbio.a)
+├── compile.c    # compiler (bio shell build: embed source + link libbbb.a)
 └── main.c       # entry + CLI (-b/-r/--tokens) + built-in demos
 ```
 
@@ -205,8 +205,8 @@ Located at `vscode/biolang-vscode/` (installable to `~/.vscode/extensions`).
 - **Syntax highlighting** — `.bl` / `.bio` files (keywords incl. `cause`, types `int`/`float`/`double`/`string`/`char`, strings, numbers, calls, comments, operators, smart refs `&rw u int p = &x`).
 - **Code snippets** — main skeleton, stream signatures (`a int` args), fork, class, res/ref/get/cause, need (incl. Class), sref smart refs, bins binary libs, spawn threads, taskm, if/while/for.
 - **Completions** — `Stream::` method completion (builtin CIO/FIO/SIO/Array/Threads/Taskm/Ref/Console + streams declared in docs), and `&` smart-ref permission `r/w/rw` → follow `u/m/a` hints.
-- **Run commands** — `BioLang: Run current file (bio)` (editor button + command palette) opens a **Webview interactive panel** — program output streams live, and the input box feeds stdin to `CIO`; `BioLang: Run built-in demos` runs them directly.
-- Reload VS Code (or "Developer: Reload Window") after installing; the run commands need `bio` on PATH (`~/.local/bin/bio`).
+- **Run commands** — `BiuBiuBiu: Run current file (bio)` (editor button + command palette) opens a **Webview interactive panel** — program output streams live, and the input box feeds stdin to `CIO`; `BiuBiuBiu: Run built-in demos` runs them directly.
+- Reload VS Code (or "Developer: Reload Window") after installing; the run commands need `bbb` on PATH (`~/.local/bin/bbb`).
 
 ## Implemented language features
 
@@ -274,4 +274,4 @@ Located at `vscode/biolang-vscode/` (installable to `~/.vscode/extensions`).
 
 ## License
 
-[MIT](LICENSE) © 2026 BioLang contributors
+[MIT](LICENSE) © 2026 BiuBiuBiu contributors

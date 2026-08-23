@@ -1,0 +1,9 @@
+[package]
+name = "bbb-llvm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "BioLang LLVM 后端（M4）：AST → LLVM IR 文本 → 系统 clang 编译"
+
+[dependencies]
+bbb-syntax = { path = "../bbb-syntax" }

@@ -3,41 +3,41 @@
 version = 4
 
 [[package]]
+name = "bbb-cli"
+version = "0.4.0"
+dependencies = [
+ "bbb-core",
+ "bbb-llvm",
+ "bbb-syntax",
+ "bbb-vm",
+]
+
+[[package]]
+name = "bbb-core"
+version = "0.4.0"
+
+[[package]]
+name = "bbb-llvm"
+version = "0.4.0"
+dependencies = [
+ "bbb-syntax",
+]
+
+[[package]]
+name = "bbb-syntax"
+version = "0.4.0"
+
+[[package]]
+name = "bbb-vm"
+version = "0.4.0"
+dependencies = [
+ "bbb-core",
+ "bbb-syntax",
+]
+
+[[package]]
 name = "bbb-wasm"
 version = "0.4.0"
 dependencies = [
- "bio-syntax",
-]
-
-[[package]]
-name = "bio-cli"
-version = "0.4.0"
-dependencies = [
- "bio-core",
- "bio-llvm",
- "bio-syntax",
- "bio-vm",
-]
-
-[[package]]
-name = "bio-core"
-version = "0.4.0"
-
-[[package]]
-name = "bio-llvm"
-version = "0.4.0"
-dependencies = [
- "bio-syntax",
-]
-
-[[package]]
-name = "bio-syntax"
-version = "0.4.0"
-
-[[package]]
-name = "bio-vm"
-version = "0.4.0"
-dependencies = [
- "bio-core",
- "bio-syntax",
+ "bbb-syntax",
 ]

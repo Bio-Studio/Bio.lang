@@ -9,4 +9,4 @@ description = "BiuBiuBiu 插件 wasm 核心：Rust 实现的格式化器/词法�
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-bio-syntax = { path = "../bio-syntax" }
+bbb-syntax = { path = "../bbb-syntax" }

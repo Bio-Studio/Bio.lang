@@ -1,0 +1,8 @@
+[package]
+name = "bbb-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "BioLang 运行时核心：arena 内存规划 + Value/请求模型"
+
+[dependencies]

@@ -43,7 +43,7 @@ pub extern "C" fn format_len(src_ptr: *const u8, src_len: usize) -> usize {
     fmt(text).len()
 }
 
-use bio_syntax::lexer::{Token, TokenKind};
+use bbb_syntax::lexer::{Token, TokenKind};
 
 const CONTROL_KW: &[&str] = &["if", "while", "for", "else"];
 const SPACE_OP: &[&str] = &[
@@ -58,7 +58,7 @@ fn is_ident_like(t: &Token) -> bool {
 /// Rust 格式化器主体。
 pub fn fmt(src: &str) -> String {
     let mut toks = Vec::new();
-    if bio_syntax::lexer::tokenize(src, &mut toks).is_err() {
+    if bbb_syntax::lexer::tokenize(src, &mut toks).is_err() {
         return src.to_string(); // 词法错误：原样返回
     }
     let mut out = String::new();

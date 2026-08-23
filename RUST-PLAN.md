@@ -1,4 +1,4 @@
-# BioLang Rust + LLVM 重写计划（RUST-PLAN.md）
+# BiuBiuBiu Rust + LLVM 重写计划（RUST-PLAN.md）
 
 > 2026-08-22 定稿，2026-08-22 更新（M2 完成，**完全原生手写路径**）。
 > 目标：把 bio 重写为 **Rust 实现 + LLVM 编译后端**，标准层不改变
@@ -17,7 +17,7 @@
   4. 旧 C 实现（git 891add2^）是参考实现，**不是标准**，语法细节
      与最新设计冲突时以最新设计为准。
 - `tools/mps_gen_rust.py` 与 `ast_generated.rs` 仅历史对照，
-  `bio-syntax` 导出的是手写 `ast`。
+  `bbb-syntax` 导出的是手写 `ast`。
 
 ## 1. 现状
 
@@ -30,11 +30,11 @@
 
 | crate | 职责 | 里程碑 |
 |---|---|---|
-| `bio-syntax` | 手写 AST（ast.rs）+ 手写解析器（parser.rs，Pratt 表达式 + 语句/声明/成员全语法面）+ 手写词法器（零拷贝 token） | M2 ✅ |
-| `bio-core` | arena 内存规划 + Value/请求模型（见 §3） | M1 ✅ |
-| `bio-cli` | `bio-rs` 入口（lexer/parse/arena 调试命令） | M1/M2 ✅ |
-| `bio-vm`（规划） | 解释器：流注册表、eval、need 解析、协作线程/Taskm、项目 CLI、.img 打包 | M3 |
-| `bio-llvm`（规划） | LLVM IR **文本**后端（对标旧 `src/llvm.c` 1321 行，零依赖，系统 clang 链接） | M4 |
+| `bbb-syntax` | 手写 AST（ast.rs）+ 手写解析器（parser.rs，Pratt 表达式 + 语句/声明/成员全语法面）+ 手写词法器（零拷贝 token） | M2 ✅ |
+| `bbb-core` | arena 内存规划 + Value/请求模型（见 §3） | M1 ✅ |
+| `bbb-cli` | `bbb` 入口（lexer/parse/arena 调试命令） | M1/M2 ✅ |
+| `bbb-vm`（规划） | 解释器：流注册表、eval、need 解析、协作线程/Taskm、项目 CLI、.img 打包 | M3 |
+| `bbb-llvm`（规划） | LLVM IR **文本**后端（对标旧 `src/llvm.c` 1321 行，零依赖，系统 clang 链接） | M4 |
 
 ## 3. 内存规划（手写掌控版，对标旧 C arena 并强化）
 
@@ -58,7 +58,7 @@
   语法面：流签名/分叉/类/need/注解/智能引用/数组字面量/多返回值/二进制库流；
   **关键字表 = 最新设计（29 个）**：get/this/int/float/double/string/char/
   bool/true/false 均为关键字（用户亲自设计，2026-08-23 确认）
-- **M3 ✅（2026-08-23）** 解释器 bio-vm：流注册表（签名回退分叉、裸调用先当前流后全局）、
+- **M3 ✅（2026-08-23）** 解释器 bbb-vm：流注册表（签名回退分叉、裸调用先当前流后全局）、
   Frame 作用域、res/ref/get/cause 位测试、多值返回→数组、注入 Array/Vector
   Bio 类（底层 Solid，Rust 实现）、need 校验（单/多文件）、项目目录模式
   （package.toml + src/ + utils/）；内置流 CIO/SIO/FIO/Com/Time/Obj/Solid/Arrays；
@@ -67,7 +67,7 @@
   遗留（下一轮）：09/10 协作线程（需可暂停执行模型）、11 智能引用语义、
   14 二进制库 dlopen、15/16 注解（@call/@ucall/@onlyread/@unfork）
 - **M4** LLVM 后端：AST→IR 文本（参考旧 `src/llvm.c`），统一 double 语义，
-  `bio llvm` 子命令 + 独立 `bio-llvm` 产物
+  `bio llvm` 子命令 + 独立 `bbb-llvm` 产物
 - **M5** 回归：examples/01-17 输出 diff（与 bin/bio 解释器对比）+ 项目示例
   + 二进制库互操作（`Stream m & "libm.so"`）
 - **M6** 性能：autotest 基准对标旧 C（update ~9.3ms 级），release LTO 优化

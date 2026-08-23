@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/bio-syntax", "crates/bio-core", "crates/bio-vm", "crates/bio-llvm", "crates/bbb-wasm", "crates/bio-cli"]
+members = ["crates/bbb-syntax", "crates/bbb-core", "crates/bbb-vm", "crates/bbb-llvm", "crates/bbb-wasm", "crates/bbb-cli"]
 
 [workspace.package]
 version = "0.4.0"

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "BBB",
+  "scopeName": "source.bbb",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#smartrefs"
+    },
+    {
+      "include": "#qualifiers"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#identifiers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "match": "//.*$",
+          "name": "comment.line.double-slash.bbb"
+        },
+        {
+          "begin": "/\\*",
+          "end": "\\*/",
+          "name": "comment.block.bbb"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "begin": "\"",
+          "end": "\"",
+          "name": "string.quoted.double.bbb"
+        }
+      ]
+    },
+    "numbers": {
+      "match": "\\b\\d+(\\.\\d+)?\\b",
+      "name": "constant.numeric.bbb"
+    },
+    "keywords": {
+      "match": "\\b(program|Stream|Class|Main|need|value|function|void|overwrite|ALL|res|ref|cause|new|const|thread|type|if|else|while|for|break|continue)\\b",
+      "name": "keyword.control.bbb"
+    },
+    "types": {
+      "match": "\\b(int|float|double|string|char)\\b",
+      "name": "storage.type.bbb"
+    },
+    "smartrefs": {
+      "match": "&\\s*(r|w|rw|m)\\s+[uaf]\\s+[A-Za-z_]\\w*",
+      "name": "variable.reference.bbb"
+    },
+    "qualifiers": {
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\s*::\\s*[A-Za-z_][A-Za-z0-9_]*",
+      "name": "entity.name.function.bbb"
+    },
+    "operators": {
+      "match": "::|==|!=|<=|>=|\\+=|-=|\\*=|/=|%=|\\+\\+|--|[-+*/=;,.(){}<>\\[\\]&]",
+      "name": "keyword.operator.bbb"
+    },
+    "identifiers": {
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b",
+      "name": "variable.other.bbb"
+    }
+  }
+}

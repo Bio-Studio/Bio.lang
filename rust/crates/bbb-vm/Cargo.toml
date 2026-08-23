@@ -1,0 +1,10 @@
+[package]
+name = "bbb-vm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "BioLang 解释器（M3）：流注册表 + eval + 内置流"
+
+[dependencies]
+bbb-syntax = { path = "../bbb-syntax" }
+bbb-core = { path = "../bbb-core" }

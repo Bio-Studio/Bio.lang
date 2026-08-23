@@ -40,7 +40,7 @@ string
 char
 ```
 
-Every operation in BioLang is a request, and a request may naturally be refused. We express this with the following syntax:
+Every operation in BiuBiuBiu is a request, and a request may naturally be refused. We express this with the following syntax:
 
 ```
 ref "reason";  // refuse the request with a reason
@@ -68,7 +68,7 @@ Stream SStream {
 }
 ```
 
-Custom class (a class is essentially a stream in BioLang):
+Custom class (a class is essentially a stream in BiuBiuBiu):
 
 ```
 Class CClass {    // Class here means forking the Class stream
