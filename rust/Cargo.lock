@@ -8,6 +8,7 @@ version = "0.4.0"
 dependencies = [
  "bio-core",
  "bio-syntax",
+ "bio-vm",
 ]
 
 [[package]]
@@ -17,3 +18,11 @@ version = "0.4.0"
 [[package]]
 name = "bio-syntax"
 version = "0.4.0"
+
+[[package]]
+name = "bio-vm"
+version = "0.4.0"
+dependencies = [
+ "bio-core",
+ "bio-syntax",
+]

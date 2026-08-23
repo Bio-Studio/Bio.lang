@@ -1,26 +1,29 @@
-//! bio-rs — BioLang Rust 实现 CLI（M2 里程碑：解析器完整）。
+//! bio-rs — BioLang Rust 实现 CLI（M3：解释器可用）。
 //!
 //! 里程碑（见仓库根 RUST-PLAN.md）：
 //! - M1 ✅ 手写词法器 + 内存核心（arena/value）
 //! - M2 ✅ 手写 AST + 完整解析器（examples/01-17 全量 parse 通过）
-//! - M3 ⏳ 解释器 + 内置流（Unistream/CIO/FIO/Array/Threads/Taskm...）
+//! - M3 🔨 解释器 + 内置流（Unistream/CIO/SIO/FIO/Com/Time/Obj/Solid/Array…）
 //! - M4 ⏳ LLVM IR 文本后端（对标旧 src/llvm.c，零依赖）
 //! - M5 ⏳ examples/01-17 全量回归
 
 use std::io::Read;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use bio_core::arena::{BumpArena, StrArena};
 use bio_core::value::Value;
 use bio_syntax::lexer::{self, TokenKind};
 use bio_syntax::parser::parse_source;
+use bio_vm::interp::Interp;
 
 const USAGE: &str = "\
-bio-rs — BioLang Rust 实现（M2：词法 + 解析 + 内存核心）
+bio-rs — BioLang Rust 实现（M3：词法 + 解析 + 解释）
 
 用法：
   bio-rs lexer <file>    打印 Token 流（词法器验证）
   bio-rs parse <file>    解析并打印 AST 摘要（解析器验证）
+  bio-rs run <file|dir>  解释运行（目录=项目：src/ + utils/）
   bio-rs arena <n>       arena/字符串池压力测试（分配 n 个值）
   bio-rs --version       版本号
 ";
@@ -87,6 +90,44 @@ fn cmd_parse(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn cmd_run(arg: &str) -> Result<(), String> {
+    let path = PathBuf::from(arg);
+    let mut interp = Interp::new();
+    let (prog, unmet) = if path.is_dir() {
+        let prog = bio_vm::load_project_sources(&path)?;
+        let unmet = interp.reg.register(&prog);
+        (prog, unmet)
+    } else {
+        let mut buf = Vec::new();
+        std::fs::File::open(&path)
+            .map_err(|e| format!("无法打开 {}: {e}", path.display()))?
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("读取失败: {e}"))?;
+        let src = String::from_utf8(buf).map_err(|_| "源文件不是 UTF-8".to_string())?;
+        let (prog, errs) = parse_source(&src);
+        if !errs.is_empty() {
+            return Err(errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n"));
+        }
+        let unmet = interp.reg.register(&prog);
+        (prog, unmet)
+    };
+    // need 校验（const 提供检查）
+    let unmet = unmet
+        .into_iter()
+        .filter(|(k, n)| !(k == "value" && prog.decls.iter().any(|d| matches!(d, bio_syntax::Decl::Const { name, .. } if name == n))))
+        .collect::<Vec<_>>();
+    if !unmet.is_empty() {
+        return Err(unmet
+            .iter()
+            .map(|(k, n)| format!("need {k} {n} 没有 provider"))
+            .collect::<Vec<_>>()
+            .join("\n"));
+    }
+    let out = interp.run(&prog);
+    print!("{}", out.stdout);
+    Ok(())
+}
+
 fn cmd_arena(n: u32) {
     // 压力测试：句柄不因扩容失效；字符串池跨页正确。
     let mut arena = BumpArena::<u64>::new();
@@ -137,6 +178,19 @@ fn main() -> ExitCode {
             },
             None => {
                 eprintln!("用法：bio-rs parse <file>");
+                ExitCode::FAILURE
+            }
+        },
+        Some("run") => match args.get(2) {
+            Some(target) => match cmd_run(target) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("{e}");
+                    ExitCode::FAILURE
+                }
+            },
+            None => {
+                eprintln!("用法：bio-rs run <file|dir>");
                 ExitCode::FAILURE
             }
         },

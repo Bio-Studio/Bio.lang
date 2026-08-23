@@ -1,15 +1,10 @@
 [package]
-name = "bio-cli"
+name = "bio-vm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "BioLang Rust 实现 CLI（Rust+LLVM 重写阶段 M1）"
-
-[[bin]]
-name = "bio-rs"
-path = "src/main.rs"
+description = "BioLang 解释器（M3）：流注册表 + eval + 内置流"
 
 [dependencies]
 bio-syntax = { path = "../bio-syntax" }
 bio-core = { path = "../bio-core" }
-bio-vm = { path = "../bio-vm" }

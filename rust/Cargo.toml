@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/bio-syntax", "crates/bio-core", "crates/bio-cli"]
+members = ["crates/bio-syntax", "crates/bio-core", "crates/bio-vm", "crates/bio-cli"]
 
 [workspace.package]
 version = "0.4.0"

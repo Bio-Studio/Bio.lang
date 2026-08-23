@@ -130,6 +130,38 @@ impl Value {
         self
     }
 
+    /// 拒绝值：REFUSED 位 + 原因字符串句柄（cause）。
+    #[inline]
+    pub fn refused_str(r: StrRef) -> Self {
+        Value {
+            tag: Tag::Str as u32 | REFUSED,
+            data: ((r.off as u64) << 32) | r.len as u64,
+            _pad: 0,
+        }
+    }
+
+    /// 拒绝原因（未拒绝时返回空串句柄）。
+    #[inline]
+    pub fn cause(&self) -> StrRef {
+        if self.refused() && self.tag() == Tag::Str {
+            self.as_str()
+        } else {
+            StrRef::NULL
+        }
+    }
+
+    /// 数值视图：Int → i64 → f64；Num → f64（统一 double 语义）。
+    #[inline]
+    pub fn as_int_or_num(&self) -> f64 {
+        match self.tag() {
+            Tag::Int => self.as_int() as f64,
+            Tag::Num => self.as_num(),
+            Tag::Bool => self.as_bool() as u8 as f64,
+            Tag::Char => self.as_char() as f64,
+            _ => 0.0,
+        }
+    }
+
     #[inline]
     pub fn as_int(&self) -> i64 {
         debug_assert_eq!(self.tag(), Tag::Int);

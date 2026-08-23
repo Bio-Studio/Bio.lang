@@ -58,8 +58,14 @@
   语法面：流签名/分叉/类/need/注解/智能引用/数组字面量/多返回值/二进制库流；
   **关键字表 = 最新设计（29 个）**：get/this/int/float/double/string/char/
   bool/true/false 均为关键字（用户亲自设计，2026-08-23 确认）
-- **M3** 解释器：流注册表（CIO/FIO/SIO/Com/Time/Rem/Solid/Array/Ref/Threads/Taskm…）、
-  need 依赖解析、项目 CLI（init/build/run/install/destroy）、.img/.zip 打包
+- **M3 ✅（2026-08-23）** 解释器 bio-vm：流注册表（签名回退分叉、裸调用先当前流后全局）、
+  Frame 作用域、res/ref/get/cause 位测试、多值返回→数组、注入 Array/Vector
+  Bio 类（底层 Solid，Rust 实现）、need 校验（单/多文件）、项目目录模式
+  （package.toml + src/ + utils/）；内置流 CIO/SIO/FIO/Com/Time/Obj/Solid/Arrays；
+  **examples 01-08 + 12 + 13 与 bin/bio 输出逐字节一致，project 多文件跑通**；
+  12 个 vm 回归测试固化。
+  遗留（下一轮）：09/10 协作线程（需可暂停执行模型）、11 智能引用语义、
+  14 二进制库 dlopen、15/16 注解（@call/@ucall/@onlyread/@unfork）
 - **M4** LLVM 后端：AST→IR 文本（参考旧 `src/llvm.c`），统一 double 语义，
   `bio llvm` 子命令 + 独立 `bio-llvm` 产物
 - **M5** 回归：examples/01-17 输出 diff（与 bin/bio 解释器对比）+ 项目示例

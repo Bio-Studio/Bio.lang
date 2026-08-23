@@ -381,6 +381,7 @@ impl<'a> Parser<'a> {
                     is_arr = true;
                 }
                 // 参数类型：基类型关键字（int/string/...）或任意标识符（流名/类名/泛型 T）
+                // 无类型参数（旧 C 记为 void，解释器不区分）：`push(v)` 合法
                 if self.peek(0).kind == TokenKind::Ident
                     || (self.peek(0).kind == TokenKind::Keyword && is_type_name(self.peek(0).text)) {
                     ty = self.next().text.to_string();
@@ -389,7 +390,7 @@ impl<'a> Parser<'a> {
                         is_arr = true;
                     }
                 } else {
-                    self.error(format!("参数 '{}' 缺少类型（语法：name type）", name));
+                    ty = String::new(); // 无类型参数
                 }
                 out.push(Param { name, ty, is_arr, ref_perm, ref_follow });
             } else {
@@ -861,7 +862,7 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Keyword if t.text == "this" => {
                 self.next();
-                self.parse_prop_chain(Expr::Var("this".to_string()))
+                self.ident_primary("this".to_string())
             }
             TokenKind::Keyword => {
                 self.next();
@@ -869,47 +870,7 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Ident => {
                 let name = self.next().text.to_string();
-                if self.eat_op("::") {
-                    let mname = self.expect_method_name();
-                    if self.is_op(0, "(") {
-                        self.next();
-                        let mut args = Vec::new();
-                        while !self.is_op(0, ")") && !self.at_eof() {
-                            args.push(self.parse_expr());
-                            if !self.eat_op(",") {
-                                break;
-                            }
-                        }
-                        self.expect_op(")");
-                        self.parse_prop_chain(Expr::Call { qual: Some(name), name: mname, args })
-                    } else {
-                        // qual::name 属性访问（this::hp）
-                        self.parse_prop_chain(Expr::Prop {
-                            base: Box::new(Expr::Var(name)),
-                            name: mname,
-                        })
-                    }
-                } else if self.is_op(0, "(") {
-                    // 裸调用
-                    self.next();
-                    let mut args = Vec::new();
-                    while !self.is_op(0, ")") && !self.at_eof() {
-                        args.push(self.parse_expr());
-                        if !self.eat_op(",") {
-                            break;
-                        }
-                    }
-                    self.expect_op(")");
-                    self.parse_prop_chain(Expr::Call { qual: None, name, args })
-                } else if self.is_op(0, "[") {
-                    // 索引读取
-                    self.next();
-                    let idx = self.parse_expr();
-                    self.expect_op("]");
-                    self.parse_prop_chain(Expr::Index { base: Box::new(Expr::Var(name)), idx: Box::new(idx) })
-                } else {
-                    self.parse_prop_chain(Expr::Var(name))
-                }
+                self.ident_primary(name)
             }
             TokenKind::Op if t.text == "(" => {
                 self.next();
@@ -928,6 +889,52 @@ impl<'a> Parser<'a> {
                 self.next();
                 Expr::Int(0)
             }
+        }
+    }
+
+    /// 标识符开头的 primary：`name` / `qual::m(...)` / `qual::prop` /
+    /// `name(...)` 裸调用 / `name[i]` 索引（this 关键字也走这里）。
+    fn ident_primary(&mut self, name: String) -> Expr {
+        if self.eat_op("::") {
+            let mname = self.expect_method_name();
+            if self.is_op(0, "(") {
+                self.next();
+                let mut args = Vec::new();
+                while !self.is_op(0, ")") && !self.at_eof() {
+                    args.push(self.parse_expr());
+                    if !self.eat_op(",") {
+                        break;
+                    }
+                }
+                self.expect_op(")");
+                self.parse_prop_chain(Expr::Call { qual: Some(name), name: mname, args })
+            } else {
+                // qual::name 属性访问（this::data）
+                self.parse_prop_chain(Expr::Prop {
+                    base: Box::new(Expr::Var(name)),
+                    name: mname,
+                })
+            }
+        } else if self.is_op(0, "(") {
+            // 裸调用
+            self.next();
+            let mut args = Vec::new();
+            while !self.is_op(0, ")") && !self.at_eof() {
+                args.push(self.parse_expr());
+                if !self.eat_op(",") {
+                    break;
+                }
+            }
+            self.expect_op(")");
+            self.parse_prop_chain(Expr::Call { qual: None, name, args })
+        } else if self.is_op(0, "[") {
+            // 索引读取
+            self.next();
+            let idx = self.parse_expr();
+            self.expect_op("]");
+            self.parse_prop_chain(Expr::Index { base: Box::new(Expr::Var(name)), idx: Box::new(idx) })
+        } else {
+            self.parse_prop_chain(Expr::Var(name))
         }
     }
 
