@@ -380,39 +380,72 @@ impl<'a> Parser<'a> {
         let mut out = Vec::new();
         self.expect_op("(");
         while !self.is_op(0, ")") && !self.at_eof() {
-            let (ref_perm, ref_follow) = if self.eat_op("&") {
-                let perm = self.expect_id();
-                let follow = self.expect_id();
-                (Some(perm), Some(follow))
+            // 引用参数两种写法都接受（引用是一种类型，参数 = 名字在前 类型在后）：
+            //   标准：name &perm follow type      e.g. `cio &r u CIO`
+            //   兼容：&perm follow name type      e.g. `&r f io IO`（旧 C 写法）
+            let mut ref_perm: Option<String> = None;
+            let mut ref_follow: Option<String> = None;
+            let mut name = String::new();
+            let mut ty = String::new();
+            let mut is_arr = false;
+
+            // 兼容旧写法：&perm follow name type（权限在最前）
+            if self.is_op(0, "&") {
+                self.next(); // &
+                ref_perm = Some(self.expect_id());
+                ref_follow = Some(self.expect_id());
+                let t = self.peek(0);
+                if t.kind == TokenKind::Ident || (t.kind == TokenKind::Keyword && t.text != "program") {
+                    name = self.next().text.to_string();
+                } else {
+                    self.error(format!("cannot parse parameter '{0}'", t.text));
+                    self.next();
+                    if !self.eat_op(",") {
+                        break;
+                    }
+                    continue;
+                }
+                // 类型：基类型关键字（int/string/...）或任意标识符（流名/类名/泛型 T）
+                if self.peek(0).kind == TokenKind::Ident
+                    || (self.peek(0).kind == TokenKind::Keyword && is_type_name(self.peek(0).text)) {
+                    ty = self.next().text.to_string();
+                }
+                // 无类型参数（旧 C 记为 void，解释器不区分）：`push(v)` 合法
             } else {
-                (None, None)
-            };
-            let t = self.peek(0);
-            if t.kind == TokenKind::Ident || (t.kind == TokenKind::Keyword && t.text != "program") {
-                let name = self.next().text.to_string();
-                let mut ty = String::new();
-                let mut is_arr = false;
+                // 标准写法：name [&perm follow] type（名字在前，引用/类型在后）
+                let t = self.peek(0);
+                if t.kind == TokenKind::Ident || (t.kind == TokenKind::Keyword && t.text != "program") {
+                    name = self.next().text.to_string();
+                } else {
+                    self.error(format!("cannot parse parameter '{0}'", t.text));
+                    self.next();
+                    if !self.eat_op(",") {
+                        break;
+                    }
+                    continue;
+                }
                 if self.eat_op("[") {
                     self.expect_op("]");
                     is_arr = true;
                 }
-                // 参数类型：基类型关键字（int/string/...）或任意标识符（流名/类名/泛型 T）
-                // 无类型参数（旧 C 记为 void，解释器不区分）：`push(v)` 合法
-                if self.peek(0).kind == TokenKind::Ident
+                // 引用类型：name &perm follow type
+                if self.eat_op("&") {
+                    ref_perm = Some(self.expect_id());
+                    ref_follow = Some(self.expect_id());
+                    if self.peek(0).kind == TokenKind::Ident
+                        || (self.peek(0).kind == TokenKind::Keyword && is_type_name(self.peek(0).text)) {
+                        ty = self.next().text.to_string();
+                    }
+                } else if self.peek(0).kind == TokenKind::Ident
                     || (self.peek(0).kind == TokenKind::Keyword && is_type_name(self.peek(0).text)) {
                     ty = self.next().text.to_string();
                     if self.eat_op("[") {
                         self.expect_op("]");
                         is_arr = true;
                     }
-                } else {
-                    ty = String::new(); // 无类型参数
                 }
-                out.push(Param { name, ty, is_arr, ref_perm, ref_follow });
-            } else {
-                self.error(format!("cannot parse parameter '{0}'", t.text));
-                self.next();
             }
+            out.push(Param { name, ty, is_arr, ref_perm, ref_follow });
             if !self.eat_op(",") {
                 break;
             }

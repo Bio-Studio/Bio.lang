@@ -724,7 +724,7 @@ fn ref_target(interp: &mut Interp, args: &[Value]) -> Outcome {
     if a.tag() != Tag::Ref { return refn(interp, "Ref::target argument is not a reference") };
     let r = interp.refs[a.as_handle() as usize].clone();
     match &r.target {
-        crate::interp::RefTarget::Var(name) => Outcome::Res(Value::string(interp.intern(name))),
+        crate::interp::RefTarget::Var { name, .. } => Outcome::Res(Value::string(interp.intern(name))),
         crate::interp::RefTarget::ArrElem { index, .. } => Outcome::Res(Value::int(*index)),
         crate::interp::RefTarget::ObjProp { name, .. } => Outcome::Res(Value::string(interp.intern(name))),
     }

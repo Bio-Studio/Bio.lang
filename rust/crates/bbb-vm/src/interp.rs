@@ -55,7 +55,8 @@ impl Default for ObjData {
 /// r=读 w=写 m=移动（纯 m 不可读不可写，只能 p++/Ref::move）
 #[derive(Clone)]
 pub enum RefTarget {
-    Var(String),                 // 变量名（frame 链查找）
+    /// 变量（帧内绑定：frame 索引 + 名字，跨方法调用仍指向原存储位置）
+    Var { frame: usize, name: String },
     ArrElem { obj: u32, index: i64 }, // 数组元素（m 权限指针移动）
     ObjProp { obj: u32, name: String },
 }
@@ -308,8 +309,14 @@ impl Interp {
             return Outcome::Ref(Cause(self.intern("refused: reference is write-only, cannot read")));
         }
         match &r.target {
-            RefTarget::Var(name) => {
-                let v = self.var_get_raw(name).unwrap_or(Value::nil());
+            RefTarget::Var { frame, name } => {
+                let v = self
+                    .frames
+                    .get(*frame)
+                    .and_then(|f| f.scope.get(name))
+                    .copied()
+                    .or_else(|| self.var_get_raw(name))
+                    .unwrap_or(Value::nil());
                 Outcome::Res(v)
             }
             RefTarget::ArrElem { obj, index } => {
@@ -329,8 +336,12 @@ impl Interp {
             return Outcome::Ref(Cause(self.intern("refused: reference is read-only, cannot write")));
         }
         match &r.target {
-            RefTarget::Var(name) => {
-                self.var_set(name, v);
+            RefTarget::Var { frame, name } => {
+                if let Some(f) = self.frames.get_mut(*frame) {
+                    f.scope.insert(name.clone(), v);
+                } else {
+                    self.var_set(name, v);
+                }
                 Outcome::Res(Value::nil())
             }
             RefTarget::ArrElem { obj, index } => {
@@ -722,14 +733,14 @@ impl Interp {
         let perm = self.pending_ref_perm.take().unwrap_or_else(|| "rw".into());
         let follow = self.pending_ref_follow.take().unwrap_or_else(|| "u".into());
         let t = match target {
-            Expr::Var(name) => RefTarget::Var(name.clone()),
+            Expr::Var(name) => RefTarget::Var { frame: self.frames.len().saturating_sub(1), name: name.clone() },
             Expr::Index { base, idx } => {
                 let bv = self.eval_expr(base);
                 let i = self.eval_expr(idx).as_int_or_num() as i64;
                 if let Tag::Obj | Tag::Arr = bv.tag() {
                     RefTarget::ArrElem { obj: bv.as_handle(), index: i }
                 } else {
-                    RefTarget::Var("?".into())
+                    RefTarget::Var { frame: self.frames.len().saturating_sub(1), name: "?".into() }
                 }
             }
             Expr::Prop { base, name } => {
@@ -737,10 +748,10 @@ impl Interp {
                 if let Tag::Obj | Tag::Arr = bv.tag() {
                     RefTarget::ObjProp { obj: bv.as_handle(), name: name.clone() }
                 } else {
-                    RefTarget::Var("?".into())
+                    RefTarget::Var { frame: self.frames.len().saturating_sub(1), name: "?".into() }
                 }
             }
-            _ => RefTarget::Var("?".into()),
+            _ => RefTarget::Var { frame: self.frames.len().saturating_sub(1), name: "?".into() },
         };
         self.refs.push(RefVal2 { target: t, perm, follow });
         Value::reff((self.refs.len() - 1) as u32)
