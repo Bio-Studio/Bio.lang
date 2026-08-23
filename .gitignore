@@ -4,6 +4,12 @@ libbio.a
 *.o
 /bin/
 *.generated.c
+*.img
+*.zip
+
+# Compiled executables from fixtures / manual builds
+/rust/tests/fixtures/bin/
+/rust/tests/fixtures/*.out
 
 # Legacy single-file archive (source is now split under src/)
 biolang.c.mono
