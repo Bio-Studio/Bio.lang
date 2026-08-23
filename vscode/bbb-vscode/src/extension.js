@@ -129,7 +129,8 @@ const STREAMS = {
     { name: 'get',     detail: 'Arrays::get(index) — the i-th instance', doc: 'e.g. `get Arrays::get(0)`' },
     { name: 'add',     detail: 'Arrays::add(arrayObject) — register an instance (called by Array/Vector __init__)', doc: 'new Array is inserted into Arrays by default' },
     { name: 'vector',  detail: 'Arrays::vector() — dynamic array (new Vector, auto-growing push)', doc: 'e.g. `ALL v = Arrays::vector(); v::push(10);`' },
-    { name: 'forget',  detail: 'Arrays::forget(arrayObject) — remove from the registry', doc: 'e.g. `Arrays::forget(v);`' }
+    { name: 'forget',  detail: 'Arrays::forget(arrayObject) — remove from the registry', doc: 'e.g. `Arrays::forget(v);`' },
+    { name: 'sort',    detail: 'Arrays::sort(arr) — in-place sort (calls the __sort__ internal method)', doc: 'e.g. `Arrays::sort(a);` or `a::sort();`' }
   ],
   Solid: [
     { name: 'new',       detail: 'Solid::new() — create a contiguous stream (contiguous storage + moving head pointer)', doc: 'the underlying storage of the Array/Vector classes' },
@@ -181,6 +182,20 @@ const STREAMS = {
 STREAMS.IO = [];   /* abstract: no methods of its own */
 STREAMS.Console = STREAMS.CIO;
 const BUILTIN_STREAMS = ['CIO', 'FIO', 'SIO', 'IO', 'Com', 'Time', 'Solid', 'Arrays', 'Threads', 'Taskm', 'Ref', 'Console'];
+
+// Interface methods (completion after `Interface Name {` / when implementing)
+const INTERFACES = {}; // name -> { method -> signature } filled by the parser
+
+// Built-in Array/Vector class methods (Bio-code classes on top of Solid)
+const ARRAY_METHODS = [
+  { name: 'len',  detail: 'a::len() — element count', doc: 'e.g. `get a::len()`' },
+  { name: 'get',  detail: 'a::get(i) — element at i', doc: 'e.g. `get a::get(0)`' },
+  { name: 'set',  detail: 'a::set(i, v) — write element at i', doc: 'e.g. `a::set(0, 42);`' },
+  { name: 'push', detail: 'a::push(v) — append', doc: 'e.g. `a::push(10);`' },
+  { name: 'pop',  detail: 'a::pop() — pop from the end', doc: 'e.g. `get a::pop()`' },
+  { name: 'join', detail: 'a::join(sep) — join elements into a string', doc: 'e.g. `get a::join("-")`' },
+  { name: 'sort', detail: 'a::sort() — in-place sort (calls __sort__ internal method)', doc: 'e.g. `a::sort();` or `Arrays::sort(a);`' },
+];
 
 /**
  * Find the position of the "}" matching the "{" at start (skipping strings/comments/char literals)
@@ -317,6 +332,12 @@ function activate(context) {
         if (mem) {
           for (const name of mem.fields) items.push(fieldItem(name, `field of stream/class ${qual}`));
           for (const name of mem.methods) items.push(methodItem(name, `method of stream ${qual}`));
+          return items;
+        }
+        // array/vector variable → built-in Array/Vector class methods (incl. sort)
+        const arrRe = new RegExp(`(?:ALL|Array|Vector)\\s+${qual}\\s*=\\s*(?:new (?:Array|Vector)|Arrays::vector\\(\\))`);
+        if (arrRe.test(text)) {
+          for (const m of ARRAY_METHODS) items.push(methodItem(m.name, m.detail));
           return items;
         }
         return items;

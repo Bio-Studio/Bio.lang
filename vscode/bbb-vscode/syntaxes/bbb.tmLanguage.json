@@ -59,7 +59,7 @@
       "name": "constant.numeric.bbb"
     },
     "keywords": {
-      "match": "\\b(program|Stream|Class|Main|need|value|function|void|overwrite|ALL|res|ref|cause|new|const|thread|type|if|else|while|for|break|continue)\\b",
+      "match": "\\b(program|Stream|Class|Interface|implements|Main|need|value|function|void|overwrite|ALL|res|ref|cause|new|const|thread|type|if|else|while|for|break|continue)\\b",
       "name": "keyword.control.bbb"
     },
     "types": {
