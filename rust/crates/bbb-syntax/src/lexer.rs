@@ -1,4 +1,4 @@
-//! BioLang 词法器（手写，Rust 版）。
+//! BiuBiuBiu 词法器（手写，Rust 版）。
 //!
 //! 规则对标旧 C 实现（src/lexer.c）+ examples/ 实际语法：
 //! - 关键字：program / Main / Stream / Class / const / thread / need /

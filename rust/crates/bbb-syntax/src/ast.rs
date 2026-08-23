@@ -1,4 +1,4 @@
-//! BioLang AST（完全原生手写版）。
+//! BiuBiuBiu AST（完全原生手写版）。
 //!
 //! 2026-08-22 起替代 MPS 生成骨架（ast_generated.rs 保留作对照，不再作为
 //! 事实源）。设计贴合旧 C 实现（src/parser.c）的节点形态，并做了枚举化

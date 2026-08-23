@@ -1,6 +1,6 @@
-# BioLang examples
+# BiuBiuBiu examples
 
-Runnable, heavily-commented programs that walk through BioLang feature by feature.
+Runnable, heavily-commented programs that walk through BiuBiuBiu feature by feature.
 Each file is self-contained — run any of them with:
 
 ```bash
