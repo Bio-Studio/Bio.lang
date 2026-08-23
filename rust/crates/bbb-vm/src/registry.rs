@@ -58,8 +58,28 @@ impl Registry {
                     let def = StreamDef { bin_file: Some(file.clone()), ..def };
                     self.insert(def);
                 }
-                Decl::Class { name, members, annos, .. } => {
+                Decl::Class { name, members, annos, implements } => {
                     let def = build_stream(name.clone(), StreamKind::Class, None, members, annos);
+                    // 接口实现检查：类必须提供接口的全部方法签名
+                    for iname in implements {
+                        let Some(idef) = self.streams.get(iname).cloned() else {
+                            unmet.push(("Interface".into(), iname.clone()));
+                            continue;
+                        };
+                        for (mn, mm) in &idef.methods {
+                            if !def.methods.contains_key(mn) {
+                                unmet.push((
+                                    format!("Interface {iname} method {mn}"),
+                                    format!("class {name} does not implement it"),
+                                ));
+                            }
+                        }
+                    }
+                    self.insert(def);
+                }
+                Decl::Interface { name, members, annos, .. } => {
+                    // 接口 = 签名流（只有签名方法；成员 body 必须为空）
+                    let def = build_stream(name.clone(), StreamKind::Signature, None, members, annos);
                     self.insert(def);
                 }
                 Decl::Fork { sig, name, members, annos, .. } => {

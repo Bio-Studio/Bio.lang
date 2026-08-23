@@ -25,8 +25,10 @@ pub enum Decl {
     StreamSig { name: String, members: Vec<Member>, annos: Vec<String> },
     /// `Stream Name & "lib.so" { members }` — 二进制库流
     StreamBin { name: String, file: String, members: Vec<Member>, annos: Vec<String> },
-    /// `Class Name { members }`
-    Class { name: String, members: Vec<Member>, annos: Vec<String> },
+    /// `Class Name implements A, B { members }` — 类（流的分叉），可实现接口
+    Class { name: String, members: Vec<Member>, annos: Vec<String>, implements: Vec<String> },
+    /// `Interface Name { 方法签名 }` — 接口（流的一种：只有签名的方法集合）
+    Interface { name: String, members: Vec<Member>, annos: Vec<String> },
     /// `Sig Name { members }` — 分叉实现
     Fork { sig: String, name: String, members: Vec<Member>, annos: Vec<String> },
 }

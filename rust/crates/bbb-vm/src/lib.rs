@@ -32,6 +32,7 @@ Class Array {
     int get(i int) { res Solid::get(this::data, i); }
     void push(v) { Solid::push(this::data, v); }
     string join(sep string) { res Solid::join(this::data, sep); }
+    void sort() { __sort__(); }
 }
 Class Vector {
     void __init__() { this::data = Solid::new().res; Arrays::add(this); }
@@ -39,5 +40,6 @@ Class Vector {
     void set(i int, v) { Solid::set(this::data, i, v); }
     int get(i int) { res Solid::get(this::data, i); }
     void push(v) { Solid::push(this::data, v); }
+    void sort() { __sort__(); }
 }
 "#;

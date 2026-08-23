@@ -198,3 +198,62 @@ m::pow(2, 10)   // ✓ qualified stream method
 ## Modes
 
 This language can be interpreted as well as compiled.
+
+## Interfaces (2026-08-23)
+
+An interface is a stream that declares **method signatures only** (no bodies).
+A class that implements an interface must provide every method the interface
+signs — the registry checks this at registration time and reports a `need`
+error when a method is missing.
+
+```
+Interface Shape {
+    double area();
+    void draw();
+}
+
+Class Circle implements Shape {
+    double area() { res 3.14 * this::r * this::r; }
+    void draw() { CIO::println("drawing circle"); }
+    double r;
+}
+
+Class Square implements Shape {
+    double area() { res this::side * this::side; }
+    void draw() {}
+    double side;
+}
+```
+
+- `Class X implements A, B { ... }` — a class may implement several
+  interfaces (comma-separated).
+- An interface name is a valid variable type: `Shape s = new Circle();` —
+  calls on it dispatch to the actual object's class (polymorphism).
+- Interfaces are streams (a fork of the signature-stream family); a class is
+  itself a forked stream.
+
+## Built-in streams vs classes (2026-08-23, clarify)
+
+- **Arrays** is a **stream** — the collection that tracks every live
+  Array/Vector instance: `count / all / get / add / vector / forget / sort`.
+  `Arrays::sort(arr)` sorts an array **in place**.
+- **Array / Vector** are **classes** written in Bio code on top of the Solid
+  stream (they are forked streams). Their public methods delegate to internal
+  methods: `sort()` calls the internal method `__sort__()` which performs the
+  in-place sort of the underlying Solid data. Internal methods are written
+  with double-underscore names (`__init__`, `__sort__`, ...).
+
+## The `new` form is a macro (2026-08-23, clarify)
+
+`ClassName var = new ClassName(args...)` is sugar expanded by the parser:
+
+```
+macro "new [ClassName] (param ...)" { /* replaces the call AST */ }
+```
+
+- `"..."` is the **call form** being matched;
+- `{...}` is the **replacement AST** — an object creation that forks the
+  class stream and automatically invokes its `__init__` method.
+- `new Type[n]` is the array-literal form (type-agnostic, includes classes).
+- A class name (or interface name) is a valid variable type in a declaration:
+  `Circle c = new Circle();` / `Shape s = new Circle();`.

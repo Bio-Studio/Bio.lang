@@ -189,9 +189,25 @@ impl<'a> Parser<'a> {
             if self.at_kw("Class") {
                 self.next();
                 let name = self.expect_id();
+                let mut implements = Vec::new();
+                if self.at_kw("implements") {
+                    self.next();
+                    implements.push(self.expect_id());
+                    while self.eat_op(",") {
+                        implements.push(self.expect_id());
+                    }
+                }
                 let members = self.parse_members();
                 let annos = self.parse_decl_annos();
-                decls.push(Decl::Class { name, members, annos });
+                decls.push(Decl::Class { name, members, annos, implements });
+                continue;
+            }
+            if self.at_kw("Interface") {
+                self.next();
+                let name = self.expect_id();
+                let members = self.parse_members();
+                let annos = self.parse_decl_annos();
+                decls.push(Decl::Interface { name, members, annos });
                 continue;
             }
             if self.at_kw("Main") {
@@ -644,6 +660,17 @@ impl<'a> Parser<'a> {
         if is_type_name(t.text) && self.peek(1).kind == TokenKind::Ident {
             let mut ty = self.next().text.to_string();
             self.eat_arr_suffix(&mut ty);
+            let name = self.expect_id();
+            let value = if self.eat_op("=") { self.parse_expr() } else { Expr::Int(0) };
+            self.expect_op(";");
+            return Stmt::Assign {
+                vtype: Some(ty), is_const: false, is_thread: false,
+                target: AssignTarget::Var(name), op: "=".into(), value,
+            };
+        }
+        // 类名/流名类型声明：Box b = new Box(42); / Hero h;（第一个是 Ident，第二个是 Ident）
+        if t.kind == TokenKind::Ident && self.peek(1).kind == TokenKind::Ident {
+            let ty = self.next().text.to_string();
             let name = self.expect_id();
             let value = if self.eat_op("=") { self.parse_expr() } else { Expr::Int(0) };
             self.expect_op(";");

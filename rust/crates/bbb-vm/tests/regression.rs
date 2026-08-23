@@ -202,3 +202,113 @@ fn ex16_phonebooth() {
     assert!(out.contains("ucall recursion → refused: phone-booth method uDown does not support recursion"));
     assert!(out.contains("plain fact(10) = 3628800"));
 }
+
+#[test]
+fn new_classname_decl() {
+    // 类名 = new 类()：宏展开语法（parser 层）
+    let src = r#"
+program main;
+Class Box {
+    void __init__(v int) { this::val = v; }
+    int val;
+}
+Main {
+    void exec() {
+        Box b = new Box(42);
+        CIO::println("val=", get b::val);
+    }
+}
+"#;
+    let (prog, errs) = parse_source(src);
+    assert!(errs.is_empty(), "parse errors: {errs:?}");
+    let mut interp = Interp::new();
+    let out = interp.run(&prog);
+    assert!(out.unmet_needs.is_empty());
+    assert!(out.stdout.contains("val= 42"), "got: {}", out.stdout);
+}
+
+#[test]
+fn arrays_sort_inplace() {
+    // Arrays::sort(arr) 原地排序 + arr::sort() → 内部 __sort__()
+    let src = r#"
+program main;
+Main {
+    void exec() {
+        Array a = new Array(4);
+        a::set(0, 30); a::set(1, 10); a::set(2, 50); a::set(3, 20);
+        Arrays::sort(a);
+        CIO::println("s1=", a);
+        a::sort();
+        CIO::println("s2=", a);
+    }
+}
+"#;
+    let (prog, errs) = parse_source(src);
+    assert!(errs.is_empty(), "parse errors: {errs:?}");
+    let mut interp = Interp::new();
+    let out = interp.run(&prog);
+    assert!(out.unmet_needs.is_empty());
+    assert!(out.stdout.contains("s1= [10, 20, 30, 50]"), "got: {}", out.stdout);
+    assert!(out.stdout.contains("s2= [10, 20, 30, 50]"), "got: {}", out.stdout);
+}
+
+#[test]
+fn interface_basic_and_polymorphism() {
+    let src = r#"
+program main;
+Interface Shape {
+    double area();
+}
+Class Circle implements Shape {
+    double area() { res 3.14 * this::r * this::r; }
+    double r;
+}
+Class Square implements Shape {
+    double area() { res this::side * this::side; }
+    double side;
+}
+Main {
+    void exec() {
+        Shape s = new Circle();
+        s::r = 2.0;
+        CIO::println("circle=", get s::area());
+        Shape t = new Square();
+        t::side = 3.0;
+        CIO::println("square=", get t::area());
+    }
+}
+"#;
+    let (prog, errs) = parse_source(src);
+    assert!(errs.is_empty(), "parse errors: {errs:?}");
+    let mut interp = Interp::new();
+    let out = interp.run(&prog);
+    assert!(out.unmet_needs.is_empty());
+    assert!(out.stdout.contains("circle= 12.56"), "got: {}", out.stdout);
+    assert!(out.stdout.contains("square= 9"), "got: {}", out.stdout);
+}
+
+#[test]
+fn interface_missing_method_rejected() {
+    let src = r#"
+program main;
+Interface Shape {
+    double area();
+    void draw();
+}
+Class Circle implements Shape {
+    double area() { res 0.0; }
+}
+Main {
+    void exec() {}
+}
+"#;
+    let (prog, errs) = parse_source(src);
+    assert!(errs.is_empty(), "parse errors: {errs:?}");
+    let mut interp = Interp::new();
+    let out = interp.run(&prog);
+    assert!(
+        out.unmet_needs.iter().any(|(k, _)| k.contains("draw")),
+        "expected missing draw method, got: {:?}",
+        out.unmet_needs
+    );
+}

@@ -625,6 +625,8 @@ fn cmd_parse(path: &str) -> Result<(), String> {
                 format!("class {name} ({} members)", members.len()),
             bbb_syntax::Decl::Fork { sig, name, members, .. } =>
                 format!("fork {sig} {name} ({} members)", members.len()),
+            bbb_syntax::Decl::Interface { name, members, .. } =>
+                format!("interface {name} ({} members)", members.len()),
         };
         println!("  {name}");
     }

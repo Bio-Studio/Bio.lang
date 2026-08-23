@@ -478,6 +478,13 @@ impl Interp {
                     let cls = self.obj_class(h);
                     // 内置流实例（cio CIO 传参）
                     if let Some(bf) = builtin::lookup(&cls, name) {
+                        if cls == "Solid" || cls == "SolidData" {
+                            // Solid 方法需要 self 作第一个参数（旧 C：all[0] = self）
+                            let mut a2 = Vec::with_capacity(args.len() + 1);
+                            a2.push(v);
+                            a2.extend_from_slice(&args);
+                            return bf(self, &a2);
+                        }
                         return bf(self, &args);
                     }
                     if self.reg.class(&cls).is_some() || cls == "Solid" {
@@ -490,6 +497,14 @@ impl Interp {
             // 裸调用：先查当前流上下文（04：流内 bare call），再全局方法名
             if let Some(h) = self.current_this() {
                 let cls = self.obj_class(h);
+                // 内部方法 __sort__：对 this 的 Solid 数据原地排序（sort() 委托）
+                if name == "__sort__" {
+                    if let Some(dh) = self.solid_data_handle(h) {
+                        self.sort_data(dh);
+                        return Outcome::Res(Value::nil());
+                    }
+                    return self.cause("no data to sort");
+                }
                 if let Some(def) = self.reg.streams.get(&cls).cloned() {
                     if let Some(m) = def.methods.get(name).cloned() {
                         if !m.body.is_empty() {
@@ -737,12 +752,13 @@ impl Interp {
             Tag::Obj | Tag::Arr => {
                 let h = base.as_handle();
                 let cls = self.obj_class(h);
-                if cls == "Solid" {
-                    let d = &self.objects[h as usize];
-                    // Solid 数据存 fields[0] 无法放 Vec——Solid 数据放 attrs？见 builtin
-                    // 此处由 builtin Solid::get 处理；直接访问 fallback
-                    let _ = d;
-                    Value::nil()
+                if cls == "Solid" || cls == "SolidData" {
+                    // 裸数组 / Solid 数据：直接下标读
+                    let data = self.solid_data(h);
+                    if i < 0 || i as usize >= data.len() {
+                        return Value::nil();
+                    }
+                    data[i as usize]
                 } else {
                     // Array/Vector：调对象 get 方法
                     self.invoke_on_obj(h, "get", vec![Value::int(i)]).get()
@@ -1042,7 +1058,7 @@ impl Interp {
         h
     }
 
-    fn objs_data_handle(&mut self, data: Vec<Value>) -> u32 {
+    pub(crate) fn objs_data_handle(&mut self, data: Vec<Value>) -> u32 {
         // 数据 Vec 存独立 "Data" 对象
         let def = self.intern("SolidData");
         self.objects.push(ObjData { def, fields: data, attrs: Vec::new() });
@@ -1144,10 +1160,25 @@ impl Interp {
         if cls == "SolidData" {
             return Some(h);
         }
+        // Array/Vector 类：data 字段（this::data = Solid::new().res）→ 继续解 Solid 的 $data
+        if let Some(d) = self.reg.streams.get(&cls) {
+            if let Some(i) = d.field_names.iter().position(|n| n == "data") {
+                if let Tag::Obj | Tag::Arr = o.fields[i].tag() {
+                    let solid_h = o.fields[i].as_handle();
+                    if let Some(dh) = self.solid_data_handle(solid_h) {
+                        return Some(dh);
+                    }
+                }
+            }
+        }
         for (k, v) in &o.attrs {
-            if self.strs.get(*k) == "$data" {
-                if let Tag::Arr = v.tag() {
-                    return Some(v.as_handle());
+            let kn = self.strs.get(*k);
+            if (kn == "$data" || kn == "data") {
+                if let Tag::Obj | Tag::Arr = v.tag() {
+                    let solid_h = v.as_handle();
+                    if let Some(dh) = self.solid_data_handle(solid_h) {
+                        return Some(dh);
+                    }
                 }
             }
         }
@@ -1158,6 +1189,43 @@ impl Interp {
         let data_h = self.solid_data_handle(h);
         if let Some(dh) = data_h {
             self.objects[dh as usize].fields.push(v);
+        }
+    }
+
+    /// 原地排序 Solid 数据（__sort__ 内部方法）：数字升序 → 字符串字典序 → 其余保持稳定序。
+    pub fn sort_data(&mut self, dh: u32) {
+        use std::cmp::Ordering;
+        // 先复制出来排序，避免借用冲突
+        let mut vals = self.objects[dh as usize].fields.clone();
+        vals.sort_by(|a, b| {
+            let ka = self.sort_key(a);
+            let kb = self.sort_key(b);
+            match (ka, kb) {
+                (Some(x), Some(y)) => x.partial_cmp(&y).unwrap_or(Ordering::Equal),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
+            }
+        });
+        self.objects[dh as usize].fields = vals;
+    }
+
+    fn sort_key(&self, v: &Value) -> Option<f64> {
+        match v.tag() {
+            Tag::Int | Tag::Num => Some(v.as_int_or_num()),
+            Tag::Str => {
+                // 字符串字典序：用字符串池内容编码成可比较键（前缀优先）
+                let s = self.strs.get(v.as_str());
+                // 用前 4 字符的字节值编码（大端），保证字典序近似；短串自然靠前
+                let b = s.as_bytes();
+                let mut key = 0.0f64;
+                for (i, c) in b.iter().take(4).enumerate() {
+                    key += (*c as f64) * 256f64.powi(3 - i as i32);
+                }
+                // 长度作为微小尾数（保证短串 < 长串同前缀）
+                Some(key + (s.len() as f64) * 1e-9)
+            }
+            _ => None,
         }
     }
 }

@@ -78,12 +78,22 @@ pub fn table() -> HashMap<(&'static str, &'static str), BuiltinFn> {
         f("Solid", "pop", solid_pop),
         f("Solid", "join", solid_join),
         f("Solid", "clear", solid_clear),
+        // 裸数组（SolidData）复用 Solid 的数据方法
+        f("SolidData", "len", solid_len),
+        f("SolidData", "get", solid_get),
+        f("SolidData", "set", solid_set),
+        f("SolidData", "push", solid_push),
+        f("SolidData", "pop", solid_pop),
+        f("SolidData", "join", solid_join),
+        f("SolidData", "clear", solid_clear),
         // ---- Arrays 集合 ----
         f("Arrays", "add", arrays_add),
         f("Arrays", "count", arrays_count),
+        f("Arrays", "all", arrays_all),
         f("Arrays", "get", arrays_get),
         f("Arrays", "forget", arrays_forget),
         f("Arrays", "vector", arrays_vector),
+        f("Arrays", "sort", arrays_sort),
         // ---- Threads 协作线程（顺序 join 式） ----
         f("Threads", "spawn", threads_spawn),
         f("Threads", "join", threads_join),
@@ -483,7 +493,8 @@ fn solid_data_h(interp: &mut Interp, args: &[Value]) -> Result<u32, Outcome> {
     let Some(a) = args.first() else { return Err(refn(interp, "Solid 方法需要存储句柄")) };
     let (Tag::Obj | Tag::Arr) = a.tag() else { return Err(refn(interp, "Solid 参数不是句柄")) };
     let h = a.as_handle();
-    if interp.obj_class(h) != "Solid" {
+    let cls = interp.obj_class(h);
+    if cls != "Solid" && cls != "SolidData" {
         return Err(refn(interp, "Solid 参数不是 Solid 实例"));
     }
     Ok(h)
@@ -569,6 +580,13 @@ fn arrays_count(interp: &mut Interp, _args: &[Value]) -> Outcome {
     res(Value::int(interp.arrays.len() as i64))
 }
 
+fn arrays_all(interp: &mut Interp, _args: &[Value]) -> Outcome {
+    // 返回整个注册表（所有 Array/Vector 实例组成的数组）
+    let vals: Vec<Value> = interp.arrays.iter().map(|h| Value::obj(*h)).collect();
+    let dh = interp.objs_data_handle(vals);
+    res(Value::arr(dh))
+}
+
 fn arrays_get(interp: &mut Interp, args: &[Value]) -> Outcome {
     let i = args.first().map(|a| a.as_int_or_num() as usize).unwrap_or(0);
     match interp.arrays.get(i) {
@@ -590,6 +608,28 @@ fn arrays_forget(interp: &mut Interp, args: &[Value]) -> Outcome {
 fn arrays_vector(interp: &mut Interp, _args: &[Value]) -> Outcome {
     let v = interp.new_class("Vector", Vec::new());
     res(v)
+}
+
+fn arrays_sort(interp: &mut Interp, args: &[Value]) -> Outcome {
+    // Arrays::sort(arr) — 原地排序数组（内部调用数组的 __sort__ 内部方法）
+    let Some(a) = args.first() else {
+        return refn(interp, "Arrays::sort 需要一个数组参数");
+    };
+    let (Tag::Obj | Tag::Arr) = a.tag() else {
+        return refn(interp, "Arrays::sort 参数不是数组对象");
+    };
+    let h = a.as_handle();
+    // 通过内部方法 __sort__ 原地排序（数组对象 → Solid 数据）
+    let out = interp.invoke_on_obj(h, "__sort__", Vec::new());
+    if out.is_refused() {
+        // 裸数组（SolidData）直接排
+        if let Some(dh) = interp.solid_data_handle(h) {
+            interp.sort_data(dh);
+            return res(Value::nil());
+        }
+        return refn(interp, "Arrays::sort 失败：不是可排序的数组");
+    }
+    res(Value::nil())
 }
 
 // ---- Threads ----

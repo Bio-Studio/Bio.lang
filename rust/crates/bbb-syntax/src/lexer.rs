@@ -54,7 +54,7 @@ pub struct Token<'a> {
 }
 
 const KEYWORDS: &[&str] = &[
-    "program", "Main", "Stream", "Class", "const", "thread", "need",
+    "program", "Main", "Stream", "Class", "Interface", "implements", "const", "thread", "need",
     "res", "ref", "get", "cause", "ALL", "if", "else", "while", "for",
     "break", "continue", "new", "this",
     "void", "int", "float", "double", "string", "char", "bool",
