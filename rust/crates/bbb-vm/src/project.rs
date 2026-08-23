@@ -25,7 +25,7 @@ pub fn load_project_sources(root: &PathBuf) -> Result<Program, String> {
     }
     files.sort();
     if files.is_empty() {
-        return Err(format!("{}: 项目里没有 src/ 或 utils/ 下的 .bio 文件", root.display()));
+        return Err(format!("{}: no .bio files under src/ or utils/", root.display()));
     }
 
     let mut decls: Vec<Decl> = Vec::new();
@@ -33,7 +33,7 @@ pub fn load_project_sources(root: &PathBuf) -> Result<Program, String> {
     let mut kind = String::new();
     for f in &files {
         let src = std::fs::read_to_string(f)
-            .map_err(|e| format!("{}: 读取失败: {e}", f.display()))?;
+            .map_err(|e| format!("{}: read failed: {e}", f.display()))?;
         let (prog, errs) = parse_source(&src);
         if !errs.is_empty() {
             return Err(format!(
@@ -47,7 +47,7 @@ pub fn load_project_sources(root: &PathBuf) -> Result<Program, String> {
         }
         if prog.main.is_some() {
             if main.is_some() {
-                return Err(format!("{}: 项目里有多个 Main 流定义", f.display()));
+                return Err(format!("{}: multiple Main stream definitions", f.display()));
             }
             main = prog.main;
         }

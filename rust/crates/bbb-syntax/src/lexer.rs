@@ -140,7 +140,7 @@ pub fn tokenize<'a>(src: &'a str, tokens: &mut Vec<Token<'a>>) -> Result<(), Lex
             s.advance();
             loop {
                 if s.peek(0).is_none() {
-                    return Err(LexError { line: start.line, col: start.col, msg: "未闭合的块注释 /*" });
+                    return Err(LexError { line: start.line, col: start.col, msg: "unterminated block comment /*" });
                 }
                 if s.peek(0) == Some(b'*') && s.peek(1) == Some(b'/') {
                     s.advance();
@@ -166,7 +166,7 @@ pub fn tokenize<'a>(src: &'a str, tokens: &mut Vec<Token<'a>>) -> Result<(), Lex
             let begin = s.pos;
             loop {
                 match s.peek(0) {
-                    None => return Err(LexError { line: start.line, col: start.col, msg: "未闭合的字符串字面量" }),
+                    None => return Err(LexError { line: start.line, col: start.col, msg: "unterminated string literal" }),
                     Some(b'"') => {
                         let end = s.pos;
                         s.advance();
@@ -190,7 +190,7 @@ pub fn tokenize<'a>(src: &'a str, tokens: &mut Vec<Token<'a>>) -> Result<(), Lex
             s.advance();
             let begin = s.pos;
             match s.peek(0) {
-                None => return Err(LexError { line: start.line, col: start.col, msg: "未闭合的字符字面量" }),
+                None => return Err(LexError { line: start.line, col: start.col, msg: "unterminated character literal" }),
                 Some(b'\\') => {
                     s.advance();
                     s.advance();
@@ -200,7 +200,7 @@ pub fn tokenize<'a>(src: &'a str, tokens: &mut Vec<Token<'a>>) -> Result<(), Lex
                 }
             }
             if s.peek(0) != Some(b'\'') {
-                return Err(LexError { line: start.line, col: start.col, msg: "字符字面量必须恰好一个字符" });
+                return Err(LexError { line: start.line, col: start.col, msg: "character literal must be exactly one character" });
             }
             s.advance();
             tokens.push(Token { kind: TokenKind::Char, text: &src[begin..s.pos - 1], span: start });
@@ -267,7 +267,7 @@ pub fn tokenize<'a>(src: &'a str, tokens: &mut Vec<Token<'a>>) -> Result<(), Lex
         return Err(LexError {
             line: start.line,
             col: start.col,
-            msg: "无法识别的字符",
+            msg: "unrecognized character",
         });
     }
 }
@@ -322,7 +322,7 @@ comment */ x"#;
     fn unclosed_string_err() {
         let mut toks = Vec::new();
         let err = tokenize("CIO::println(\"oops);", &mut toks).unwrap_err();
-        assert_eq!(err.msg, "未闭合的字符串字面量");
+        assert_eq!(err.msg, "unterminated string literal");
     }
 
     #[test]

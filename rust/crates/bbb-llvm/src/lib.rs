@@ -504,7 +504,7 @@ fn compile_expr(ctx: &mut Ctx, e: &Expr) -> Result<(Ty, String), String> {
                 ctx.emit(format!("  {r} = load {}, ptr {reg}", t.llvm()));
                 Ok((t, r))
             }
-            None => Err(format!("未定义变量 {name}")),
+            None => Err(format!("undefined variable {name}")),
         },
         Expr::Unwrap { op, l } => {
             let (t, v) = compile_expr(ctx, l)?;
@@ -555,7 +555,7 @@ fn compile_expr(ctx: &mut Ctx, e: &Expr) -> Result<(Ty, String), String> {
                     }
                     Ok((Ty::I64, out))
                 }
-                _ => Err(format!("不支持的运算符 {op}")),
+                _ => Err(format!("unsupported operator {op}")),
             }
         }
         Expr::Call { qual, name, args } => {
@@ -596,7 +596,7 @@ fn compile_expr(ctx: &mut Ctx, e: &Expr) -> Result<(Ty, String), String> {
             let _ = qual;
             Ok((rt, call_reg))
         }
-        _ => Err(format!("LLVM 后端暂不支持该表达式: {e:?}")),
+        _ => Err(format!("LLVM backend does not support this expression yet: {e:?}")),
     }
 }
 

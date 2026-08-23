@@ -97,7 +97,7 @@ impl<'a> Parser<'a> {
         if self.eat_op(op) {
             true
         } else {
-            self.error(format!("期望 '{}'，得到 '{}'", op, self.peek(0).text));
+            self.error(format!("expected '{0}', got '{1}'", op, self.peek(0).text));
             false
         }
     }
@@ -108,7 +108,7 @@ impl<'a> Parser<'a> {
             self.next();
             t.text.to_string()
         } else {
-            self.error(format!("期望标识符，得到 '{}'", t.text));
+            self.error(format!("expected identifier, got '{0}'", t.text));
             String::new()
         }
     }
@@ -163,7 +163,7 @@ impl<'a> Parser<'a> {
                     self.expect_op(";");
                 }
                 self.err_if(!matches!(k.as_str(), "value" | "function" | "stream" | "Stream" | "Class"),
-                            format!("need 只支持 value/function/stream/Class，得到 '{k}'"));
+                            format!("need only supports value/function/stream/Class, got '{k}'"));
                 decls.push(Decl::Need { kind: k, name });
                 continue;
             }
@@ -174,7 +174,7 @@ impl<'a> Parser<'a> {
                     let t = self.peek(0);
                     let file = match t.kind {
                         TokenKind::Str | TokenKind::Ident => self.next().text.to_string(),
-                        _ => { self.error("期望二进制库文件名（字符串或标识符）"); String::new() }
+                        _ => { self.error("expected binary library file name (string or identifier)"); String::new() }
                     };
                     let members = self.parse_members();
                     let annos = self.parse_decl_annos();
@@ -226,7 +226,7 @@ impl<'a> Parser<'a> {
                 decls.push(Decl::Fork { sig, name, members, annos });
                 continue;
             }
-            self.error(format!("无法解析顶层声明 '{}'", self.peek(0).text));
+            self.error(format!("cannot parse top-level declaration '{0}'", self.peek(0).text));
             self.next(); // 推进防死循环
         }
         Program { kind, decls, main }
@@ -312,7 +312,7 @@ impl<'a> Parser<'a> {
                 out.push(Member::Field { ty, names });
                 continue;
             }
-            self.error(format!("无法解析流/类成员 '{}'", t.text));
+            self.error(format!("cannot parse stream/class member '{0}'", t.text));
             self.next();
         }
         self.expect_op("}");
@@ -332,7 +332,7 @@ impl<'a> Parser<'a> {
                 self.eat_arr_suffix(&mut ty);
                 (ty, self.expect_id())
             } else {
-                self.error(format!("期望方法（返回类型 + 名字），得到 '{}'", t.text));
+                self.error(format!("expected method (return type + name), got '{0}'", t.text));
                 self.next();
                 continue;
             };
@@ -410,7 +410,7 @@ impl<'a> Parser<'a> {
                 }
                 out.push(Param { name, ty, is_arr, ref_perm, ref_follow });
             } else {
-                self.error(format!("无法解析参数 '{}'", t.text));
+                self.error(format!("cannot parse parameter '{0}'", t.text));
                 self.next();
             }
             if !self.eat_op(",") {
@@ -427,7 +427,7 @@ impl<'a> Parser<'a> {
             self.next();
             let a = self.expect_id();
             self.err_if(!METHOD_ANNOS.contains(&a.as_str()),
-                        format!("未知方法注解 @{a}（仅 @read/@write/@call/@ucall）"));
+                        format!("unknown method annotation @{a} (only @read/@write/@call/@ucall)"));
             out.push(a);
         }
         out
@@ -439,7 +439,7 @@ impl<'a> Parser<'a> {
             self.next();
             let a = self.expect_id();
             self.err_if(!DECL_ANNOS.contains(&a.as_str()),
-                        format!("未知流注解 @{a}（仅 @onlyread/@unfork）"));
+                        format!("unknown stream annotation @{a} (only @onlyread/@unfork)"));
             out.push(a);
         }
         out
@@ -554,13 +554,13 @@ impl<'a> Parser<'a> {
         if self.peek(0).kind == TokenKind::Ident || self.at_kw("this") {
             return self.parse_ident_stmt();
         }
-        self.error(format!("无法解析语句 '{}'", self.peek(0).text));
+        self.error(format!("cannot parse statement '{0}'", self.peek(0).text));
         Stmt::Expr(Expr::Int(0))
     }
 
     fn parse_assign_rhs(&mut self, op: &str) -> Expr {
         if !self.eat_op(op) {
-            self.error(format!("期望 '{}'", op));
+            self.error(format!("expected '{0}'", op));
         }
         self.parse_expr()
     }
@@ -626,17 +626,17 @@ impl<'a> Parser<'a> {
         self.next(); // &
         let perm = self.expect_id();
         self.err_if(!PERMS.contains(&perm.as_str()),
-                    format!("无效引用权限 '{perm}'（r/w/m 组合：r, w, m, rw, rm, wm, rwm）"));
+                    format!("invalid reference permission '{perm}' (r/w/m stacks: r, w, m, rw, rm, wm, rwm)"));
         let follow = self.expect_id();
         self.err_if(!FOLLOWS.contains(&follow.as_str()),
-                    format!("无效引用层级 '{follow}'（应为 u/f/a/t）"));
+                    format!("invalid reference follow layer '{follow}' (expected u/f/a/t)"));
         let mut base = self.expect_id();
         self.eat_arr_suffix(&mut base);
         let name = self.expect_id();
         self.expect_op("=");
         let init = self.parse_expr();
         self.err_if(!matches!(init, Expr::RefOf(_)),
-                    "引用声明要求 &<表达式> 初始化（如 &rw u int p = &a[0];）");
+                    "reference declaration requires &<expr> initializer (e.g. &rw u int p = &a[0];)");
         self.expect_op(";");
         Stmt::RefDecl { perm, follow, base, name, init }
     }
@@ -765,7 +765,7 @@ impl<'a> Parser<'a> {
         // 其他表达式语句
         let e = self.parse_expr();
         if !self.is_op(0, ";") && !self.is_op(0, ")") {
-            self.error(format!("语句后期望 ';'，得到 '{}'", self.peek(0).text));
+            self.error(format!("expected ';' after statement, got '{0}'", self.peek(0).text));
         } else {
             self.eat_op(";");
         }
@@ -912,7 +912,7 @@ impl<'a> Parser<'a> {
                 Expr::BinOp { op: "-".into(), l: Box::new(Expr::Int(0)), r: Box::new(e) }
             }
             _ => {
-                self.error(format!("无法解析表达式 '{}'", t.text));
+                self.error(format!("cannot parse expression '{0}'", t.text));
                 self.next();
                 Expr::Int(0)
             }
@@ -971,7 +971,7 @@ impl<'a> Parser<'a> {
             self.next();
             let t = self.peek(0);
             if t.kind != TokenKind::Ident && t.kind != TokenKind::Keyword {
-                self.error(format!("无效属性名 '{}'", t.text));
+                self.error(format!("invalid property name '{0}'", t.text));
                 self.next();
                 break;
             }

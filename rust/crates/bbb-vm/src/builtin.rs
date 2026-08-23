@@ -164,7 +164,7 @@ fn cio_error(interp: &mut Interp, args: &[Value]) -> Outcome {
 // ---- SIO ----
 
 fn sio_format(interp: &mut Interp, args: &[Value]) -> Outcome {
-    let Some(fmt) = args.first() else { return refn(interp, "SIO::format 需要格式串") };
+    let Some(fmt) = args.first() else { return refn(interp, "SIO::format requires a format string") };
     let fmt_s = arg_str(interp, fmt);
     let rest = &args[1..];
     let mut out = String::new();
@@ -272,7 +272,7 @@ fn fio_write_file(interp: &mut Interp, args: &[Value]) -> Outcome {
     let content = args.get(1).map(|a| arg_str(interp, a)).unwrap_or_default();
     match fs::write(&path, content) {
         Ok(()) => res(Value::boolean(true)),
-        Err(e) => refn(interp, &format!("FIO::writeFile 失败: {e}")),
+        Err(e) => refn(interp, &format!("FIO::writeFile failed: {e}")),
     }
 }
 
@@ -282,7 +282,7 @@ fn fio_append_file(interp: &mut Interp, args: &[Value]) -> Outcome {
     match fs::OpenOptions::new().append(true).create(true).open(&path)
         .and_then(|mut f| std::io::Write::write_all(&mut f, content.as_bytes())) {
         Ok(()) => res(Value::boolean(true)),
-        Err(e) => refn(interp, &format!("FIO::appendFile 失败: {e}")),
+        Err(e) => refn(interp, &format!("FIO::appendFile failed: {e}")),
     }
 }
 
@@ -290,7 +290,7 @@ fn fio_read_file(interp: &mut Interp, args: &[Value]) -> Outcome {
     let path = args.first().map(|a| arg_str(interp, a)).unwrap_or_default();
     match fs::read_to_string(&path) {
         Ok(s) => res(Value::string(interp.intern(&s))),
-        Err(e) => refn(interp, &format!("FIO::readFile 失败: {e}")),
+        Err(e) => refn(interp, &format!("FIO::readFile failed: {e}")),
     }
 }
 
@@ -305,7 +305,7 @@ fn num1(interp: &mut Interp, a: &Value) -> Result<f64, Outcome> {
     if matches!(a.tag(), Tag::Int | Tag::Num) {
         Ok(a.as_int_or_num())
     } else {
-        Err(refn(interp, "Com 需要数值参数"))
+        Err(refn(interp, "Com requires a numeric argument"))
     }
 }
 
@@ -447,8 +447,8 @@ fn time_reset(interp: &mut Interp, args: &[Value]) -> Outcome {
 // ---- Obj ----
 
 fn obj_set(interp: &mut Interp, args: &[Value]) -> Outcome {
-    let Some(obj) = args.first() else { return refn(interp, "Obj::set 需要对象") };
-    let (Tag::Obj | Tag::Arr) = obj.tag() else { return refn(interp, "Obj::set 第一个参数不是对象") };
+    let Some(obj) = args.first() else { return refn(interp, "Obj::set requires an object") };
+    let (Tag::Obj | Tag::Arr) = obj.tag() else { return refn(interp, "Obj::set first argument is not an object") };
     let h = obj.as_handle();
     let key = args.get(1).map(|a| arg_str(interp, a)).unwrap_or_default();
     let val = args.get(2).copied().unwrap_or(Value::nil());
@@ -457,8 +457,8 @@ fn obj_set(interp: &mut Interp, args: &[Value]) -> Outcome {
 }
 
 fn obj_get(interp: &mut Interp, args: &[Value]) -> Outcome {
-    let Some(obj) = args.first() else { return refn(interp, "Obj::get 需要对象") };
-    let (Tag::Obj | Tag::Arr) = obj.tag() else { return refn(interp, "Obj::get 第一个参数不是对象") };
+    let Some(obj) = args.first() else { return refn(interp, "Obj::get requires an object") };
+    let (Tag::Obj | Tag::Arr) = obj.tag() else { return refn(interp, "Obj::get first argument is not an object") };
     let h = obj.as_handle();
     let key = args.get(1).map(|a| arg_str(interp, a)).unwrap_or_default();
     match interp.obj_prop_get(h, &key) {
@@ -468,8 +468,8 @@ fn obj_get(interp: &mut Interp, args: &[Value]) -> Outcome {
 }
 
 fn obj_call(interp: &mut Interp, args: &[Value]) -> Outcome {
-    let Some(obj) = args.first() else { return refn(interp, "Obj::call 需要对象") };
-    let (Tag::Obj | Tag::Arr) = obj.tag() else { return refn(interp, "Obj::call 第一个参数不是对象") };
+    let Some(obj) = args.first() else { return refn(interp, "Obj::call requires an object") };
+    let (Tag::Obj | Tag::Arr) = obj.tag() else { return refn(interp, "Obj::call first argument is not an object") };
     let h = obj.as_handle();
     let name = args.get(1).map(|a| arg_str(interp, a)).unwrap_or_default();
     let rest = args[2..].to_vec();
@@ -490,12 +490,12 @@ fn solid_new(interp: &mut Interp, _args: &[Value]) -> Outcome {
 }
 
 fn solid_data_h(interp: &mut Interp, args: &[Value]) -> Result<u32, Outcome> {
-    let Some(a) = args.first() else { return Err(refn(interp, "Solid 方法需要存储句柄")) };
-    let (Tag::Obj | Tag::Arr) = a.tag() else { return Err(refn(interp, "Solid 参数不是句柄")) };
+    let Some(a) = args.first() else { return Err(refn(interp, "Solid method requires a storage handle")) };
+    let (Tag::Obj | Tag::Arr) = a.tag() else { return Err(refn(interp, "Solid argument is not a handle")) };
     let h = a.as_handle();
     let cls = interp.obj_class(h);
     if cls != "Solid" && cls != "SolidData" {
-        return Err(refn(interp, "Solid 参数不是 Solid 实例"));
+        return Err(refn(interp, "Solid argument is not a Solid instance"));
     }
     Ok(h)
 }
@@ -613,10 +613,10 @@ fn arrays_vector(interp: &mut Interp, _args: &[Value]) -> Outcome {
 fn arrays_sort(interp: &mut Interp, args: &[Value]) -> Outcome {
     // Arrays::sort(arr) — 原地排序数组（内部调用数组的 __sort__ 内部方法）
     let Some(a) = args.first() else {
-        return refn(interp, "Arrays::sort 需要一个数组参数");
+        return refn(interp, "Arrays::sort requires an array argument");
     };
     let (Tag::Obj | Tag::Arr) = a.tag() else {
-        return refn(interp, "Arrays::sort 参数不是数组对象");
+        return refn(interp, "Arrays::sort argument is not an array object");
     };
     let h = a.as_handle();
     // 通过内部方法 __sort__ 原地排序（数组对象 → Solid 数据）
@@ -627,7 +627,7 @@ fn arrays_sort(interp: &mut Interp, args: &[Value]) -> Outcome {
             interp.sort_data(dh);
             return res(Value::nil());
         }
-        return refn(interp, "Arrays::sort 失败：不是可排序的数组");
+        return refn(interp, "Arrays::sort failed: not a sortable array");
     }
     res(Value::nil())
 }
@@ -697,14 +697,14 @@ fn taskm_active(interp: &mut Interp, _args: &[Value]) -> Outcome {
 // ---- Ref ----
 
 fn ref_read(interp: &mut Interp, args: &[Value]) -> Outcome {
-    let Some(a) = args.first() else { return refn(interp, "Ref::read 需要引用") };
-    if a.tag() != Tag::Ref { return refn(interp, "Ref::read 参数不是引用"); }
+    let Some(a) = args.first() else { return refn(interp, "Ref::read requires a reference") };
+    if a.tag() != Tag::Ref { return refn(interp, "Ref::read argument is not a reference"); }
     interp.ref_read(a.as_handle())
 }
 
 fn ref_write(interp: &mut Interp, args: &[Value]) -> Outcome {
-    let Some(a) = args.first() else { return refn(interp, "Ref::write 需要引用") };
-    if a.tag() != Tag::Ref { return refn(interp, "Ref::write 参数不是引用") };
+    let Some(a) = args.first() else { return refn(interp, "Ref::write requires a reference") };
+    if a.tag() != Tag::Ref { return refn(interp, "Ref::write argument is not a reference") };
     let v = args.get(1).copied().unwrap_or(Value::nil());
     match interp.ref_write(a.as_handle(), v) {
         Outcome::Res(_) => Outcome::Res(Value::nil()),
@@ -714,14 +714,14 @@ fn ref_write(interp: &mut Interp, args: &[Value]) -> Outcome {
 }
 
 fn ref_move(interp: &mut Interp, args: &[Value]) -> Outcome {
-    let Some(a) = args.first() else { return refn(interp, "Ref::move 需要引用") };
-    if a.tag() != Tag::Ref { return refn(interp, "Ref::move 参数不是引用") };
+    let Some(a) = args.first() else { return refn(interp, "Ref::move requires a reference") };
+    if a.tag() != Tag::Ref { return refn(interp, "Ref::move argument is not a reference") };
     interp.ref_move(a.as_handle())
 }
 
 fn ref_target(interp: &mut Interp, args: &[Value]) -> Outcome {
-    let Some(a) = args.first() else { return refn(interp, "Ref::target 需要引用") };
-    if a.tag() != Tag::Ref { return refn(interp, "Ref::target 参数不是引用") };
+    let Some(a) = args.first() else { return refn(interp, "Ref::target requires a reference") };
+    if a.tag() != Tag::Ref { return refn(interp, "Ref::target argument is not a reference") };
     let r = interp.refs[a.as_handle() as usize].clone();
     match &r.target {
         crate::interp::RefTarget::Var(name) => Outcome::Res(Value::string(interp.intern(name))),
@@ -731,8 +731,8 @@ fn ref_target(interp: &mut Interp, args: &[Value]) -> Outcome {
 }
 
 fn ref_perm(interp: &mut Interp, args: &[Value]) -> Outcome {
-    let Some(a) = args.first() else { return refn(interp, "Ref::perm 需要引用") };
-    if a.tag() != Tag::Ref { return refn(interp, "Ref::perm 参数不是引用") };
+    let Some(a) = args.first() else { return refn(interp, "Ref::perm requires a reference") };
+    if a.tag() != Tag::Ref { return refn(interp, "Ref::perm argument is not a reference") };
     let r = interp.refs[a.as_handle() as usize].clone();
     Outcome::Res(Value::string(interp.intern(&r.perm)))
 }
