@@ -24,6 +24,7 @@ bio-rs — BioLang Rust 实现（M3：词法 + 解析 + 解释）
   bio-rs lexer <file>    打印 Token 流（词法器验证）
   bio-rs parse <file>    解析并打印 AST 摘要（解析器验证）
   bio-rs run <file|dir>  解释运行（目录=项目：src/ + utils/）
+  bio-rs llvm <file>     LLVM 编译成原生可执行并运行（M4）
   bio-rs arena <n>       arena/字符串池压力测试（分配 n 个值）
   bio-rs --version       版本号
 ";
@@ -128,6 +129,43 @@ fn cmd_run(arg: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn cmd_llvm(arg: &str) -> Result<(), String> {
+    let path = std::path::PathBuf::from(arg);
+    let mut buf = Vec::new();
+    std::fs::File::open(&path)
+        .map_err(|e| format!("无法打开 {}: {e}", path.display()))?
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("读取失败: {e}"))?;
+    let src = String::from_utf8(buf).map_err(|_| "源文件不是 UTF-8".to_string())?;
+    let (prog, errs) = parse_source(&src);
+    if !errs.is_empty() {
+        return Err(errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n"));
+    }
+    // 1. AST → IR
+    let ir = bio_llvm::compile(&prog).map_err(|e| format!("IR 生成失败: {e}"))?;
+    // 2. IR → clang → 可执行
+    let dir = std::env::temp_dir().join(format!("bio-rs-llvm-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ir_path = dir.join("out.ll");
+    let bin_path = dir.join("a.out");
+    std::fs::write(&ir_path, &ir).map_err(|e| e.to_string())?;
+    let status = std::process::Command::new("clang")
+        .arg(&ir_path)
+        .arg("-o")
+        .arg(&bin_path)
+        .status()
+        .map_err(|e| format!("clang 调用失败: {e}"))?;
+    if !status.success() {
+        return Err(format!("clang 编译失败（IR 已存 {})", ir_path.display()));
+    }
+    // 3. 运行
+    let status = std::process::Command::new(&bin_path).status().map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!("运行失败，退出码 {:?}", status.code()));
+    }
+    Ok(())
+}
+
 fn cmd_arena(n: u32) {
     // 压力测试：句柄不因扩容失效；字符串池跨页正确。
     let mut arena = BumpArena::<u64>::new();
@@ -191,6 +229,19 @@ fn main() -> ExitCode {
             },
             None => {
                 eprintln!("用法：bio-rs run <file|dir>");
+                ExitCode::FAILURE
+            }
+        },
+        Some("llvm") => match args.get(2) {
+            Some(target) => match cmd_llvm(target) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("{e}");
+                    ExitCode::FAILURE
+                }
+            },
+            None => {
+                eprintln!("用法：bio-rs llvm <file>");
                 ExitCode::FAILURE
             }
         },

@@ -24,6 +24,17 @@ pub enum Flow {
 pub struct Frame {
     pub scope: HashMap<String, Value>,
     pub this: Option<u32>, // 对象/流实例句柄
+    pub method: String,    // 当前方法名（电话亭递归检测）
+    pub booth: bool,       // @call/@ucall 电话亭方法
+}
+
+/// 协作线程任务（顺序 join 式：spawn 注册，join 时按逆序执行）
+pub struct ThreadTask {
+    pub id: u32,
+    pub name: String,      // 裸方法名
+    pub def_name: Option<String>, // 所属流名
+    pub args: Vec<Value>,
+    pub done: Option<Outcome>,
 }
 
 /// 对象数据：类名 + 声明字段 + 动态属性。
@@ -40,15 +51,20 @@ impl Default for ObjData {
     }
 }
 
-/// 引用值（智能引用，&perm follow base）。
-pub struct RefVal {
-    pub target: u32, // 指向对象句柄
-    pub index: i64,  // 元素偏移（数组指针）
-    pub perm: StrRef,
-    pub follow: StrRef,
-    pub base: StrRef,
-    pub is_array_elem: bool,
-    pub base_handle: u32, // 数组对象句柄
+/// 引用值（智能引用，&perm follow base）——11 的语义：
+/// r=读 w=写 m=移动（纯 m 不可读不可写，只能 p++/Ref::move）
+#[derive(Clone)]
+pub enum RefTarget {
+    Var(String),                 // 变量名（frame 链查找）
+    ArrElem { obj: u32, index: i64 }, // 数组元素（m 权限指针移动）
+    ObjProp { obj: u32, name: String },
+}
+
+#[derive(Clone)]
+pub struct RefVal2 {
+    pub target: RefTarget,
+    pub perm: String,
+    pub follow: String,
 }
 
 /// 运行结果。
@@ -60,7 +76,7 @@ pub struct RunOutcome {
 pub struct Interp {
     pub strs: StrArena,
     pub objects: Vec<ObjData>,
-    pub refs: Vec<RefVal>,
+    pub refs: Vec<RefVal2>,
     pub reg: Registry,
     pub frames: Vec<Frame>,
     pub stdout: String,
@@ -70,6 +86,12 @@ pub struct Interp {
     pub arrays: Vec<u32>, // Arrays 集合（对象句柄）
     pub consts: Vec<(String, Value)>,
     pub stream_instances: HashMap<String, u32>, // fork/class 流单例（持久字段状态）
+    pub threads: Vec<ThreadTask>, // 协作线程任务（顺序 join 式）
+    pub thread_seq: u32,
+    pub running_thread: Option<u32>, // Threads::self()
+    pub open_libs: Vec<*mut core::ffi::c_void>, // dlopen 句柄
+    pub pending_ref_perm: Option<String>,
+    pub pending_ref_follow: Option<String>,
 }
 
 impl Interp {
@@ -87,6 +109,12 @@ impl Interp {
             arrays: Vec::new(),
             consts: Vec::new(),
             stream_instances: HashMap::new(),
+            threads: Vec::new(),
+            thread_seq: 0,
+            running_thread: None,
+            open_libs: Vec::new(),
+            pending_ref_perm: None,
+            pending_ref_follow: None,
         }
     }
 
@@ -108,27 +136,48 @@ impl Interp {
         if errs.is_empty() {
             self.reg.register(&builtin_prog);
         }
-        // 用户声明
-        let mut unmet = self.reg.register(prog);
+        // 用户声明：@unfork 签名流的 fork 跳过（15：启动打印拒绝）
+        let mut prog2 = prog.clone();
+        let mut unfork_msgs = Vec::new();
+        prog2.decls.retain(|d| {
+            if let Decl::Fork { sig, .. } = d {
+                let blocked = prog.decls.iter().any(|x| matches!(x, Decl::StreamSig { name, annos, .. } if name == sig && annos.contains(&"unfork".to_string())));
+                if blocked {
+                    unfork_msgs.push(format!("refused: stream {sig} is @unfork, cannot fork"));
+                    return false;
+                }
+            }
+            true
+        });
+        let mut unmet = self.reg.register(&prog2);
+        for m in unfork_msgs {
+            self.stdout.push_str(&m);
+            self.stdout.push('\n');
+        }
         // 顶层常量求值
-        for d in &prog.decls {
+        for d in &prog2.decls {
             if let Decl::Const { name, init, .. } = d {
                 let v = self.eval_expr(init);
                 self.consts.push((name.clone(), v));
             }
         }
         // 执行 Main::exec
-        let exec = prog
+        let exec = prog2
             .main
             .as_ref()
             .and_then(|m| m.methods.iter().find(|x| x.name == "exec"))
             .cloned();
         if let Some(method) = exec {
-            self.frames.push(Frame { scope: HashMap::new(), this: None });
+            self.frames.push(Frame { scope: HashMap::new(), this: None, method: "exec".into(), booth: false });
             let outcome = self.exec_method_body(&method);
             self.frames.pop();
-            // Main::exec 的返回值丢弃（与旧 C 一致；显式输出走 CIO）
-            let _ = outcome;
+            // Main::exec 拒绝：自然结束(nothing)静默；显式/传播拒绝打印 ⛔ 并终止（11 的 mp=99）
+            if let Outcome::Ref(c) = outcome {
+                let cause_s = self.strs.get(c.0).to_string();
+                if cause_s != "nothing" {
+                    self.stdout.push_str(&format!("⛔ main stream refused: {cause_s}\n"));
+                }
+            }
         }
         // need 校验（多文件/单文件统一）
         unmet.retain(|(k, n)| !self.consts.iter().any(|(cn, _)| cn == n && k == "value"));
@@ -236,6 +285,100 @@ impl Interp {
         None
     }
 
+    /// 只查 frame 链 + consts（不含流名/this 等解析）。
+    fn var_get_raw(&mut self, name: &str) -> Option<Value> {
+        for f in self.frames.iter().rev() {
+            if let Some(v) = f.scope.get(name) {
+                return Some(*v);
+            }
+        }
+        for (n, v) in self.consts.iter().rev() {
+            if n == name {
+                return Some(*v);
+            }
+        }
+        None
+    }
+
+    /// 引用读（get p / Ref::read）：perm 无 r → 拒绝 "refused: reference is write-only, cannot read"
+    pub fn ref_read(&mut self, h: u32) -> Outcome {
+        let r = self.refs[h as usize].clone();
+        // 读需要 r 权限（纯 m/纯 w 不可读——11：get mp 拒绝）
+        if !r.perm.contains('r') {
+            return Outcome::Ref(Cause(self.intern("refused: reference is write-only, cannot read")));
+        }
+        match &r.target {
+            RefTarget::Var(name) => {
+                let v = self.var_get_raw(name).unwrap_or(Value::nil());
+                Outcome::Res(v)
+            }
+            RefTarget::ArrElem { obj, index } => {
+                self.invoke_on_obj(*obj, "get", vec![Value::int(*index)])
+            }
+            RefTarget::ObjProp { obj, name } => {
+                let v = self.obj_prop_get(*obj, name).unwrap_or(Value::nil());
+                Outcome::Res(v)
+            }
+        }
+    }
+
+    /// 引用写（p = v / Ref::write）：perm 无 w → 拒绝 "refused: reference is read-only, cannot write"
+    pub fn ref_write(&mut self, h: u32, v: Value) -> Outcome {
+        let r = self.refs[h as usize].clone();
+        if !r.perm.contains('w') {
+            return Outcome::Ref(Cause(self.intern("refused: reference is read-only, cannot write")));
+        }
+        match &r.target {
+            RefTarget::Var(name) => {
+                self.var_set(name, v);
+                Outcome::Res(Value::nil())
+            }
+            RefTarget::ArrElem { obj, index } => {
+                self.invoke_on_obj(*obj, "set", vec![Value::int(*index), v]);
+                Outcome::Res(Value::nil())
+            }
+            RefTarget::ObjProp { obj, name } => {
+                self.obj_prop_set(*obj, name, v);
+                Outcome::Res(Value::nil())
+            }
+        }
+    }
+
+    /// 引用移动（Ref::move / p++）：perm 无 m → 拒绝；数组越界 → 拒绝
+    pub fn ref_move(&mut self, h: u32) -> Outcome {
+        let r = self.refs[h as usize].clone();
+        if !r.perm.contains('m') {
+            return Outcome::Ref(Cause(self.intern("Ref refused: reference has no move permission")));
+        }
+        if let RefTarget::ArrElem { obj, index } = r.target {
+            let cls = self.obj_class(obj);
+            let len = if cls == "Array" || cls == "Vector" {
+                match self.invoke_on_obj(obj, "len", vec![]) {
+                    Outcome::Res(v) => v.as_int_or_num() as i64,
+                    Outcome::Ref(_) => 0,
+                }
+            } else {
+                0
+            };
+            if index + 1 >= len {
+                return Outcome::Ref(Cause(self.intern("refused: reference moved out of bounds")));
+            }
+            self.refs[h as usize].target = RefTarget::ArrElem { obj, index: index + 1 };
+            Outcome::Res(Value::nil())
+        } else {
+            Outcome::Ref(Cause(self.intern("Ref refused: reference is not a moving pointer")))
+        }
+    }
+
+    /// 引用变量赋值语句（rw = 5）→ 引用写；拒绝则传播。
+    fn ref_assign(&mut self, _name: &str, old: Value, v: Value) -> Flow {
+        let h = old.as_handle();
+        match self.ref_write(h, v) {
+            Outcome::Res(_) => Flow::Next,
+            Outcome::Ref(c) => Flow::Ret(Outcome::Ref(c)),
+        }
+    }
+
     fn var_set(&mut self, name: &str, v: Value) {
         for f in self.frames.iter_mut().rev() {
             if f.scope.contains_key(name) {
@@ -277,7 +420,13 @@ impl Interp {
         for (p, a) in method.params.iter().zip(args.iter()) {
             scope.insert(p.name.clone(), *a);
         }
-        self.frames.push(Frame { scope, this });
+        self.frames.push(Frame { scope, this, method: method.name.clone(), booth: !method.annos.is_empty() && (method.annos.contains(&"call".to_string()) || method.annos.contains(&"ucall".to_string())) });
+        // 电话亭：@call/@ucall 方法递归拒绝（16）
+        let name = method.name.clone();
+        if self.frames.iter().filter(|f| f.method == name && f.booth).count() > 1 {
+            self.frames.pop();
+            return self.cause(&format!("refused: phone-booth method {name} does not support recursion"));
+        }
         let r = self.exec_method_body(&method);
         self.frames.pop();
         r
@@ -309,8 +458,17 @@ impl Interp {
             // 流名
             if let Some(def) = self.reg.resolve_qual(q).cloned() {
                 if let Some(m) = def.methods.get(name).cloned() {
+                    // @onlyread：@write 注解方法拒绝（15）
+                    if def.annos.contains(&"onlyread".to_string())
+                        && m.annos.contains(&"write".to_string()) {
+                        return self.cause(&format!("refused: stream {} is @onlyread — {name}() is a write method", def.name));
+                    }
                     let singleton = self.stream_instance(&def);
                     return self.call_method(Some(def), m, singleton, args);
+                }
+                // StreamBin：Bio 方法体之外回退 dlsym（14）
+                if let Some(lib) = def.bin_file.clone() {
+                    return self.dl_call(&lib, name, args);
                 }
             }
             // 变量（对象值 / 流值）
@@ -362,6 +520,41 @@ impl Interp {
             }
         }
         self.cause(&format!("object {cls} refuses: no method {name}"))
+    }
+
+    /// 执行一个线程任务（裸方法），结果存 task.done。
+    pub fn run_thread(&mut self, id: u32) -> Outcome {
+        if let Some(t) = self.threads.iter().find(|t| t.id == id) {
+            if let Some(d) = t.done {
+                return d;
+            }
+        }
+        let Some(idx) = self.threads.iter().position(|t| t.id == id) else {
+            return self.cause("no such thread");
+        };
+        let name = self.threads[idx].name.clone();
+        let def_name = self.threads[idx].def_name.clone();
+        let args = self.threads[idx].args.clone();
+        let found = if let Some(dn) = &def_name {
+            self.reg.streams.get(dn).cloned()
+                .and_then(|d| d.methods.get(&name).cloned().map(|m| (d, m)))
+                .or_else(|| self.reg.find_bare_method(&name).map(|(d, m)| (d.clone(), m.clone())))
+        } else {
+            self.reg.find_bare_method(&name).map(|(d, m)| (d.clone(), m.clone()))
+        };
+        let old_running = self.running_thread;
+        self.running_thread = Some(id);
+        let out = if let Some((def, m)) = found {
+            let singleton = self.stream_instance(&def);
+            self.call_method(Some(def), m, singleton, args)
+        } else {
+            self.cause(&format!("no method {name}"))
+        };
+        self.running_thread = old_running;
+        if let Some(t) = self.threads.iter_mut().find(|t| t.id == id) {
+            t.done = Some(out);
+        }
+        out
     }
 
     /// 流实例：fork/class 有**持久单例**（流级字段状态跨调用保持）；signature/main 无。
@@ -424,11 +617,15 @@ impl Interp {
             Expr::Unwrap { op, l } => {
                 let v = self.eval_expr(l);
                 if op == "get" {
-                    if v.refused() {
-                        Value::nil()
-                    } else {
-                        v
+                    // 引用值 → 引用读（11：get rw / get mp）
+                    if v.tag() == Tag::Ref {
+                        return match self.ref_read(v.as_handle()) {
+                            Outcome::Res(val) => val,
+                            Outcome::Ref(c) => Value::refused_str(c.0),
+                        };
                     }
+                    // 拒绝传播（11：get mp 打印 refused: refused: ...）
+                    v
                 } else {
                     // cause
                     if v.refused() {
@@ -451,8 +648,50 @@ impl Interp {
         }
     }
 
+    /// dlopen 调用导出符号（double fn(double...) -> double，14 用）。
+    pub fn dl_call(&mut self, lib: &str, sym: &str, args: Vec<Value>) -> Outcome {
+        use std::ffi::CString;
+        let cpath = CString::new(lib).unwrap_or_default();
+        unsafe {
+            extern "C" {
+                fn dlopen(path: *const i8, mode: i32) -> *mut core::ffi::c_void;
+                fn dlsym(h: *mut core::ffi::c_void, sym: *const i8) -> *mut core::ffi::c_void;
+            }
+            let mut handle = std::ptr::null_mut();
+            for h in &self.open_libs {
+                handle = *h;
+            }
+            if handle.is_null() {
+                handle = dlopen(cpath.as_ptr(), 1); // RTLD_LAZY
+                if !handle.is_null() {
+                    self.open_libs.push(handle);
+                }
+            }
+            if handle.is_null() {
+                return self.cause(&format!("cannot open library {lib}"));
+            }
+            let csym = CString::new(sym).unwrap_or_default();
+            let fptr = dlsym(handle, csym.as_ptr());
+            if fptr.is_null() {
+                return self.cause(&format!("stream {lib} refuses: no symbol {sym}"));
+            }
+            let nums: Vec<f64> = args.iter().map(|a| a.as_int_or_num()).collect();
+            let result: f64 = match nums.len() {
+                0 => std::mem::transmute::<*mut core::ffi::c_void, fn() -> f64>(fptr)(),
+                1 => std::mem::transmute::<*mut core::ffi::c_void, fn(f64) -> f64>(fptr)(nums[0]),
+                _ => std::mem::transmute::<*mut core::ffi::c_void, fn(f64, f64) -> f64>(fptr)(nums[0], nums[1]),
+            };
+            Outcome::Res(Value::num(result))
+        }
+    }
+
     pub fn new_class(&mut self, cls: &str, args: Vec<Value>) -> Value {
         if let Some(def) = self.reg.class(cls).cloned() {
+            // @unfork 类拒绝（15）
+            if def.annos.contains(&"unfork".to_string()) {
+                let c = self.intern(&format!("Obj refused: class {cls} is @unfork, cannot fork"));
+                return Value::refused_str(c);
+            }
             let h = self.new_object_typed(cls, &def.field_types);
             if let Some(m) = def.methods.get("__init__").cloned() {
                 self.call_method(Some(def), m, Some(h), args);
@@ -465,21 +704,31 @@ impl Interp {
     }
 
     fn make_ref(&mut self, target: &Expr) -> Value {
-        // &lvalue：变量 / 数组元素（简化：整变量引用）
-        match target {
-            Expr::Var(name) => {
-                // 找到变量所在帧并记录——简化实现：拷贝当前值 + 名字
-                let name_ref = self.intern(name);
-                let perm = self.intern("rw");
-                let follow = self.intern("u");
-                let base = self.intern("");
-                self.refs.push(RefVal { target: u32::MAX, perm, follow, base, is_array_elem: false, base_handle: u32::MAX, index: 0 });
-                let h = (self.refs.len() - 1) as u32;
-                let _ = name_ref;
-                Value::reff(h)
+        let perm = self.pending_ref_perm.take().unwrap_or_else(|| "rw".into());
+        let follow = self.pending_ref_follow.take().unwrap_or_else(|| "u".into());
+        let t = match target {
+            Expr::Var(name) => RefTarget::Var(name.clone()),
+            Expr::Index { base, idx } => {
+                let bv = self.eval_expr(base);
+                let i = self.eval_expr(idx).as_int_or_num() as i64;
+                if let Tag::Obj | Tag::Arr = bv.tag() {
+                    RefTarget::ArrElem { obj: bv.as_handle(), index: i }
+                } else {
+                    RefTarget::Var("?".into())
+                }
             }
-            _ => Value::reff(0),
-        }
+            Expr::Prop { base, name } => {
+                let bv = self.eval_expr(base);
+                if let Tag::Obj | Tag::Arr = bv.tag() {
+                    RefTarget::ObjProp { obj: bv.as_handle(), name: name.clone() }
+                } else {
+                    RefTarget::Var("?".into())
+                }
+            }
+            _ => RefTarget::Var("?".into()),
+        };
+        self.refs.push(RefVal2 { target: t, perm, follow });
+        Value::reff((self.refs.len() - 1) as u32)
     }
 
     fn index_get(&mut self, base: Value, idx: Value) -> Value {
@@ -504,8 +753,12 @@ impl Interp {
     }
 
     fn binop(&mut self, op: &str, l: Value, r: Value) -> Value {
-        if l.refused() || r.refused() {
-            return Value::nil().with_refused();
+        // 拒绝传播保留 cause（16：get down(...) 拒绝后 + 1 仍带原因）
+        if l.refused() {
+            return l;
+        }
+        if r.refused() {
+            return r;
         }
         match op {
             "+" => match (l.tag(), r.tag()) {
@@ -647,6 +900,22 @@ impl Interp {
             Stmt::Assign { vtype, is_const, is_thread, target, op, value } => {
                 let _ = (is_const, is_thread);
                 let v = self.eval_expr(value);
+                // 拒绝传播：非 ALL 声明赋值右侧拒绝 → 方法拒绝（11：mp = 99 → ⛔）
+                // nothing（void 方法自然结束）不传播
+                if v.refused() && vtype.as_deref() != Some("ALL")
+                    && self.strs.get(v.cause()) != "nothing" {
+                    return Flow::Ret(Outcome::Ref(Cause(v.cause())));
+                }
+                // 赋值目标是引用变量 → 引用写（rw = 5）
+                if let AssignTarget::Var(name) = target {
+                    if op == "=" && vtype.is_none() {
+                        if let Some(old) = self.var_get_raw(name) {
+                            if old.tag() == Tag::Ref {
+                                return self.ref_assign(name, old, v);
+                            }
+                        }
+                    }
+                }
                 match target {
                     AssignTarget::Var(name) => {
                         let v = if op == "=" {
@@ -684,9 +953,11 @@ impl Interp {
                 }
                 Flow::Next
             }
-            Stmt::RefDecl { base, name, init, .. } => {
-                let rv = self.eval_expr(init);
+            Stmt::RefDecl { perm, follow, base, name, init } => {
                 let _ = base;
+                self.pending_ref_perm = Some(perm.clone());
+                self.pending_ref_follow = Some(follow.clone());
+                let rv = self.eval_expr(init);
                 if let Some(f) = self.frames.last_mut() {
                     f.scope.insert(name.clone(), rv);
                 }
@@ -695,16 +966,33 @@ impl Interp {
             Stmt::Inc { name, op } => {
                 let old = self.var_get(name).unwrap_or(Value::nil());
                 let delta = if op == "++" { 1 } else { -1 };
-                let nv = match old.tag() {
-                    Tag::Int => Value::int(old.as_int_or_num() as i64 + delta),
-                    Tag::Num => Value::num(old.as_int_or_num() + delta as f64),
-                    _ => old,
-                };
-                self.var_set(name, nv);
-                Flow::Next
+                if old.tag() == Tag::Ref {
+                    // m 权限指针移动（11：mp++）
+                    let h = old.as_handle();
+                    if !self.refs[h as usize].perm.contains('m') {
+                        return Flow::Ret(Outcome::Ref(Cause(self.intern("reference has no move permission"))));
+                    }
+                    if let RefTarget::ArrElem { obj, index } = self.refs[h as usize].target.clone() {
+                        self.refs[h as usize].target = RefTarget::ArrElem { obj, index: index + delta };
+                    }
+                    Flow::Next
+                } else {
+                    let nv = match old.tag() {
+                        Tag::Int => Value::int(old.as_int_or_num() as i64 + delta),
+                        Tag::Num => Value::num(old.as_int_or_num() + delta as f64),
+                        _ => old,
+                    };
+                    self.var_set(name, nv);
+                    Flow::Next
+                }
             }
             Stmt::Expr(e) => {
-                self.eval_expr(e);
+                let v = self.eval_expr(e);
+                // 调用语句拒绝 → 传播（nothing = void 自然结束，不传播）
+                if v.refused() && matches!(e, Expr::Call { .. })
+                    && self.strs.get(v.cause()) != "nothing" {
+                    return Flow::Ret(Outcome::Ref(Cause(v.cause())));
+                }
                 Flow::Next
             }
         }
@@ -765,7 +1053,7 @@ impl Interp {
 
     pub fn fmt_value(&mut self, v: &Value) -> String {
         if v.refused() {
-            return self.strs.get(v.cause()).to_string();
+            return format!("refused: {}", self.strs.get(v.cause()));
         }
         match v.tag() {
             Tag::Nil => "nil".to_string(),

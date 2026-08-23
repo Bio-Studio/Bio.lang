@@ -7,6 +7,7 @@ name = "bio-cli"
 version = "0.4.0"
 dependencies = [
  "bio-core",
+ "bio-llvm",
  "bio-syntax",
  "bio-vm",
 ]
@@ -14,6 +15,13 @@ dependencies = [
 [[package]]
 name = "bio-core"
 version = "0.4.0"
+
+[[package]]
+name = "bio-llvm"
+version = "0.4.0"
+dependencies = [
+ "bio-syntax",
+]
 
 [[package]]
 name = "bio-syntax"

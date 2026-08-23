@@ -18,9 +18,11 @@ pub struct StreamDef {
     pub name: String,
     pub kind: StreamKind,
     pub sig: Option<String>, // fork 的签名流名
+    pub bin_file: Option<String>, // StreamBin 的库文件
     pub methods: HashMap<String, Method>,
     pub field_names: Vec<String>,
     pub field_types: Vec<String>, // 与 field_names 一一对应（默认值初始化用）
+    pub annos: Vec<String>,       // @onlyread/@unfork（流注解）
 }
 
 impl StreamDef {
@@ -47,27 +49,35 @@ impl Registry {
         for d in &prog.decls {
             match d {
                 Decl::Need { kind, name } => needs.push((kind.clone(), name.clone())),
-                Decl::StreamSig { name, members, .. } => {
-                    let def = build_stream(name.clone(), StreamKind::Signature, None, members);
+                Decl::StreamSig { name, members, annos, .. } => {
+                    let def = build_stream(name.clone(), StreamKind::Signature, None, members, annos);
                     self.insert(def);
                 }
-                Decl::StreamBin { name, .. } => {
-                    let def = StreamDef {
-                        name: name.clone(),
-                        kind: StreamKind::Binary,
-                        sig: None,
-                        methods: HashMap::new(),
-                        field_names: Vec::new(),
-                        field_types: Vec::new(),
-                    };
+                Decl::StreamBin { name, file, members, .. } => {
+                    let def = build_stream(name.clone(), StreamKind::Binary, None, members, &[]);
+                    let def = StreamDef { bin_file: Some(file.clone()), ..def };
                     self.insert(def);
                 }
-                Decl::Class { name, members, .. } => {
-                    let def = build_stream(name.clone(), StreamKind::Class, None, members);
+                Decl::Class { name, members, annos, .. } => {
+                    let def = build_stream(name.clone(), StreamKind::Class, None, members, annos);
                     self.insert(def);
                 }
-                Decl::Fork { sig, name, members, .. } => {
-                    let def = build_stream(name.clone(), StreamKind::Fork, Some(sig.clone()), members);
+                Decl::Fork { sig, name, members, annos, .. } => {
+                    let mut def = build_stream(name.clone(), StreamKind::Fork, Some(sig.clone()), members, annos);
+                    // 字段/签名方法继承自签名流（15：int count 声明在 Stream ReadOnly）
+                    if let Some(sig_def) = self.streams.get(sig).cloned() {
+                        let mut names = sig_def.field_names.clone();
+                        let mut types = sig_def.field_types.clone();
+                        for (i, n) in names.iter().enumerate() {
+                            if !def.field_names.contains(n) {
+                                def.field_names.push(n.clone());
+                                def.field_types.push(types[i].clone());
+                            }
+                        }
+                        for (mn, mm) in &sig_def.methods {
+                            def.methods.entry(mn.clone()).or_insert_with(|| mm.clone());
+                        }
+                    }
                     self.insert(def);
                 }
                 Decl::Const { .. } => {}
@@ -85,6 +95,8 @@ impl Registry {
                 methods,
                 field_names: Vec::new(),
                 field_types: Vec::new(),
+                annos: Vec::new(),
+                bin_file: None,
             };
             self.insert(def);
         }
@@ -162,6 +174,7 @@ fn build_stream(
     kind: StreamKind,
     sig: Option<String>,
     members: &[Member],
+    annos: &[String],
 ) -> StreamDef {
     let mut methods = HashMap::new();
     let mut field_names = Vec::new();
@@ -179,5 +192,5 @@ fn build_stream(
             }
         }
     }
-    StreamDef { name, kind, sig, methods, field_names, field_types }
+    StreamDef { name, kind, sig, bin_file: None, methods, field_names, field_types, annos: annos.to_vec() }
 }

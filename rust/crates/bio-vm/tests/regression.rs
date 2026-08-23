@@ -136,3 +136,69 @@ Main { void exec() { CIO::println("x"); } }
     let out = interp.run(&prog);
     assert_eq!(out.unmet_needs, vec![("value".to_string(), "MISSING".to_string())]);
 }
+
+#[test]
+fn ex09_threads() {
+    let out = run_file("09-threads.bio");
+    assert!(out.contains("live threads: 2"));
+    assert!(out.contains("thread 1  10! = 3628800"));
+    assert!(out.contains("thread 2  countUp = 5"));
+}
+
+#[test]
+fn ex10_taskm() {
+    let out = run_file("10-taskm.bio");
+    assert!(out.contains("tasks: 2"));
+    assert!(out.contains("tasks done: 0"));
+    assert!(out.contains("jobA sum = 15"));
+    assert!(out.contains("jobB 2^4 = 16"));
+}
+
+#[test]
+fn ex11_smart_refs() {
+    let out = run_file("11-smart-refs.bio");
+    assert!(out.contains("u read counter = 10"));
+    assert!(out.contains("read-only write → Ref refused: reference is read-only, cannot write"));
+    assert!(out.contains("rw read = 10"));
+    assert!(out.contains("counter after rw = 5 → 5"));
+    assert!(out.contains("thread 2  a-layer = 44"));
+    assert!(out.contains("thread 1  a-layer = 42"));
+    assert!(out.contains("t1 = 42  t2 = 44"));
+    assert!(out.contains("at [1] = refused: refused: reference is write-only, cannot read"));
+    assert!(out.contains("⛔ main stream refused: refused: reference is read-only, cannot write"));
+}
+
+#[test]
+fn ex14_binary_lib() {
+    let out = run_file("14-binary-lib.bio");
+    assert!(out.contains("m::sin(0) = 0"));
+    assert!(out.contains("m::cos(0) = 1"));
+    assert!(out.contains("m::pow(2,10) = 1024"));
+    assert!(out.contains("m::doubleIt(21) = 42"));
+}
+
+#[test]
+fn ex15_annotations() {
+    let out = run_file("15-annotations.bio");
+    assert!(out.contains("refused: stream Sealed is @unfork, cannot fork"));
+    assert!(out.contains("new @unfork class → Obj refused: class Frozen is @unfork, cannot fork"));
+    assert!(out.contains("onlyread get = 0"));
+    assert!(out.contains("onlyread bump → refused: stream RO is @onlyread — bump() is a write method"));
+    assert!(out.contains("alias get = 0"));
+    assert!(out.contains("alias touch → refused: stream RA is @onlyread — touch() is a write method"));
+    assert!(out.contains("marked write → refused: stream G is @onlyread — markedWrite() is a write method"));
+    assert!(out.contains("marked read = 1"));
+    assert!(out.contains("safe read = 1"));
+}
+
+#[test]
+fn ex16_phonebooth() {
+    let out = run_file("16-phonebooth.bio");
+    assert!(out.contains("t1 sum = 5050  t2 sum = 20100"));
+    assert!(out.contains("global 5! = 120"));
+    assert!(out.contains("global 6! = 720"));
+    assert!(out.contains("direct recursion → refused: phone-booth method down does not support recursion"));
+    assert!(out.contains("indirect recursion → refused: phone-booth method down2 does not support recursion"));
+    assert!(out.contains("ucall recursion → refused: phone-booth method uDown does not support recursion"));
+    assert!(out.contains("plain fact(10) = 3628800"));
+}

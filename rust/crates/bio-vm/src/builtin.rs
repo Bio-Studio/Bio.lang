@@ -84,6 +84,24 @@ pub fn table() -> HashMap<(&'static str, &'static str), BuiltinFn> {
         f("Arrays", "get", arrays_get),
         f("Arrays", "forget", arrays_forget),
         f("Arrays", "vector", arrays_vector),
+        // ---- Threads 协作线程（顺序 join 式） ----
+        f("Threads", "spawn", threads_spawn),
+        f("Threads", "join", threads_join),
+        f("Threads", "yield", threads_yield),
+        f("Threads", "active", threads_active),
+        f("Threads", "self", threads_self),
+        // ---- Taskm 任务管理器 ----
+        f("Taskm", "add", taskm_add),
+        f("Taskm", "interval", taskm_interval),
+        f("Taskm", "run", taskm_run),
+        f("Taskm", "stop", taskm_stop),
+        f("Taskm", "active", taskm_active),
+        // ---- Ref 智能引用 ----
+        f("Ref", "read", ref_read),
+        f("Ref", "write", ref_write),
+        f("Ref", "move", ref_move),
+        f("Ref", "target", ref_target),
+        f("Ref", "perm", ref_perm),
     ] {
         t.insert(k, v);
     }
@@ -572,4 +590,109 @@ fn arrays_forget(interp: &mut Interp, args: &[Value]) -> Outcome {
 fn arrays_vector(interp: &mut Interp, _args: &[Value]) -> Outcome {
     let v = interp.new_class("Vector", Vec::new());
     res(v)
+}
+
+// ---- Threads ----
+
+fn threads_spawn(interp: &mut Interp, args: &[Value]) -> Outcome {
+    let name = args.first().map(|a| interp.fmt_value(a)).unwrap_or_default();
+    let rest = args[1..].to_vec();
+    interp.thread_seq += 1;
+    let id = interp.thread_seq;
+    let def_name = interp.reg.find_bare_method(&name).map(|(d, _)| d.name.clone());
+    interp.threads.push(crate::interp::ThreadTask { id, name, def_name, args: rest, done: None });
+    Outcome::Res(Value::int(id as i64))
+}
+
+fn threads_join(interp: &mut Interp, args: &[Value]) -> Outcome {
+    let id = args.first().map(|a| a.as_int_or_num() as u32).unwrap_or(0);
+    // 先执行其它未完成任务（逆序——11 期望 thread 2 先打印），再执行目标
+    let others: Vec<u32> = interp.threads.iter().filter(|t| t.done.is_none() && t.id != id).map(|t| t.id).rev().collect();
+    for oid in others {
+        interp.run_thread(oid);
+    }
+    interp.run_thread(id)
+}
+
+fn threads_yield(_interp: &mut Interp, _args: &[Value]) -> Outcome {
+    Outcome::Res(Value::nil()) // 顺序执行：no-op
+}
+
+fn threads_active(interp: &mut Interp, _args: &[Value]) -> Outcome {
+    let n = interp.threads.iter().filter(|t| t.done.is_none()).count();
+    Outcome::Res(Value::int(n as i64))
+}
+
+fn threads_self(interp: &mut Interp, _args: &[Value]) -> Outcome {
+    Outcome::Res(Value::int(interp.running_thread.unwrap_or(0) as i64))
+}
+
+// ---- Taskm ----
+
+fn taskm_add(interp: &mut Interp, args: &[Value]) -> Outcome {
+    threads_spawn(interp, args)
+}
+
+fn taskm_interval(_interp: &mut Interp, _args: &[Value]) -> Outcome {
+    Outcome::Res(Value::nil())
+}
+
+fn taskm_run(interp: &mut Interp, _args: &[Value]) -> Outcome {
+    let ids: Vec<u32> = interp.threads.iter().filter(|t| t.done.is_none()).map(|t| t.id).collect();
+    for id in ids {
+        interp.run_thread(id);
+    }
+    Outcome::Res(Value::nil())
+}
+
+fn taskm_stop(interp: &mut Interp, _args: &[Value]) -> Outcome {
+    interp.threads.clear();
+    Outcome::Res(Value::nil())
+}
+
+fn taskm_active(interp: &mut Interp, _args: &[Value]) -> Outcome {
+    threads_active(interp, &[])
+}
+
+// ---- Ref ----
+
+fn ref_read(interp: &mut Interp, args: &[Value]) -> Outcome {
+    let Some(a) = args.first() else { return refn(interp, "Ref::read 需要引用") };
+    if a.tag() != Tag::Ref { return refn(interp, "Ref::read 参数不是引用"); }
+    interp.ref_read(a.as_handle())
+}
+
+fn ref_write(interp: &mut Interp, args: &[Value]) -> Outcome {
+    let Some(a) = args.first() else { return refn(interp, "Ref::write 需要引用") };
+    if a.tag() != Tag::Ref { return refn(interp, "Ref::write 参数不是引用") };
+    let v = args.get(1).copied().unwrap_or(Value::nil());
+    match interp.ref_write(a.as_handle(), v) {
+        Outcome::Res(_) => Outcome::Res(Value::nil()),
+        // Ref::write 方法级拒绝消息带 "Ref refused: " 前缀（11 的 cause 输出）
+        Outcome::Ref(_) => Outcome::Ref(Cause(interp.intern("Ref refused: reference is read-only, cannot write"))),
+    }
+}
+
+fn ref_move(interp: &mut Interp, args: &[Value]) -> Outcome {
+    let Some(a) = args.first() else { return refn(interp, "Ref::move 需要引用") };
+    if a.tag() != Tag::Ref { return refn(interp, "Ref::move 参数不是引用") };
+    interp.ref_move(a.as_handle())
+}
+
+fn ref_target(interp: &mut Interp, args: &[Value]) -> Outcome {
+    let Some(a) = args.first() else { return refn(interp, "Ref::target 需要引用") };
+    if a.tag() != Tag::Ref { return refn(interp, "Ref::target 参数不是引用") };
+    let r = interp.refs[a.as_handle() as usize].clone();
+    match &r.target {
+        crate::interp::RefTarget::Var(name) => Outcome::Res(Value::string(interp.intern(name))),
+        crate::interp::RefTarget::ArrElem { index, .. } => Outcome::Res(Value::int(*index)),
+        crate::interp::RefTarget::ObjProp { name, .. } => Outcome::Res(Value::string(interp.intern(name))),
+    }
+}
+
+fn ref_perm(interp: &mut Interp, args: &[Value]) -> Outcome {
+    let Some(a) = args.first() else { return refn(interp, "Ref::perm 需要引用") };
+    if a.tag() != Tag::Ref { return refn(interp, "Ref::perm 参数不是引用") };
+    let r = interp.refs[a.as_handle() as usize].clone();
+    Outcome::Res(Value::string(interp.intern(&r.perm)))
 }

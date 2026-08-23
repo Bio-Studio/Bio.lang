@@ -13,3 +13,4 @@ path = "src/main.rs"
 bio-syntax = { path = "../bio-syntax" }
 bio-core = { path = "../bio-core" }
 bio-vm = { path = "../bio-vm" }
+bio-llvm = { path = "../bio-llvm" }
