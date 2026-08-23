@@ -53,15 +53,12 @@ pub struct Token<'a> {
     pub span: Span,
 }
 
-// BioLang 关键字（**标准表**，与旧 C 实现 src/lexer.c 的 KW 表逐字对齐）：
-//   program Stream Class Main need value function void overwrite ALL res ref
-//   cause new const thread if else while for break continue
-// 注意：get/this/type/int/float/double/string/char/bool/true/false 都不是关键字
-// （旧标准中为普通标识符，由解析器按上下文处理）。
 const KEYWORDS: &[&str] = &[
-    "program", "Stream", "Class", "Main", "need", "value", "function",
-    "void", "overwrite", "ALL", "res", "ref", "cause", "new",
-    "const", "thread", "if", "else", "while", "for", "break", "continue",
+    "program", "Main", "Stream", "Class", "const", "thread", "need",
+    "res", "ref", "get", "cause", "ALL", "if", "else", "while", "for",
+    "break", "continue", "new", "this",
+    "void", "int", "float", "double", "string", "char", "bool",
+    "true", "false",
 ];
 
 const OPS2: &[&str] = &["==", "!=", "<=", ">=", "&&", "||", "::", "++", "--", "->"];

@@ -7,14 +7,15 @@
 ## 0. 实现路径（2026-08-22 用户拍板：完全原生，不借助 MPS）
 
 - 词法器、AST、解析器、内存核心全部**手写 Rust**；
-- **标准层定义（不改变）**：
-  1. 词法/语法标准 = 旧 C 实现（git 891add2^:src/lexer.c + parser.c）——
-     关键字表、运算符集、语句/声明形态逐字对齐；
-  2. 语义标准 = DESIGN.md（流模型/请求模型/智能引用 28 型）；
-  3. 回归标准 = examples/01-17 输出（tests/examples.rs 固化 parse 层）；
-  4. 工具链标准 = vscode/biolang-vscode（已恢复 0.16.0，含高亮/补全/格式化）。
-- MPS 语言模型（structure.mps 43 概念）是语言设计文档（8-13 迁移产物），
-  不驱动代码生成，**不替代上述标准**；
+- **标准层定义（不改变，2026-08-23 修正）**：
+  1. 语言设计标准 = **最新设计（用户亲自设计）**：MPS 语言模型
+     structure.mps（43 概念）+ DESIGN.md；关键字表以 M2 实现为准
+     （29 个：get/this/int/float/double/string/char/bool/true/false
+     均为关键字——最新设计如此，旧 C 的 22 字表只是参考实现的历史状态）；
+  2. 回归标准 = examples/01-17 输出（tests/examples.rs 固化 parse 层）；
+  3. 工具链标准 = vscode/biolang-vscode（已恢复 0.16.0，含高亮/补全/格式化）；
+  4. 旧 C 实现（git 891add2^）是参考实现，**不是标准**，语法细节
+     与最新设计冲突时以最新设计为准。
 - `tools/mps_gen_rust.py` 与 `ast_generated.rs` 仅历史对照，
   `bio-syntax` 导出的是手写 `ast`。
 
@@ -55,9 +56,8 @@
 - **M2 ✅** 手写 AST + 完整解析器：examples/01-17 + project 共 20 文件
   全量 parse 通过（固化为集成测试 examples.rs）；17 解析器单测；
   语法面：流签名/分叉/类/need/注解/智能引用/数组字面量/多返回值/二进制库流；
-  **标准对齐（21:40 修正）**：关键字表与旧 lexer.c 逐字一致（22 个，
-  含 value/function/overwrite；get/this/type/int 等为普通标识符）；
-  删除非标准扩展（&& || 逻辑运算、一元负号、true/false 字面量）
+  **关键字表 = 最新设计（29 个）**：get/this/int/float/double/string/char/
+  bool/true/false 均为关键字（用户亲自设计，2026-08-23 确认）
 - **M3** 解释器：流注册表（CIO/FIO/SIO/Com/Time/Rem/Solid/Array/Ref/Threads/Taskm…）、
   need 依赖解析、项目 CLI（init/build/run/install/destroy）、.img/.zip 打包
 - **M4** LLVM 后端：AST→IR 文本（参考旧 `src/llvm.c`），统一 double 语义，

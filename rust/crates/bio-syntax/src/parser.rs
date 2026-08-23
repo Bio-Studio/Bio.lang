@@ -104,7 +104,7 @@ impl<'a> Parser<'a> {
 
     fn expect_id(&mut self) -> String {
         let t = self.peek(0);
-        if t.kind == TokenKind::Ident {
+        if t.kind == TokenKind::Ident || (t.kind == TokenKind::Keyword && t.text != "program") {
             self.next();
             t.text.to_string()
         } else {
@@ -245,6 +245,7 @@ impl<'a> Parser<'a> {
         self.expect_op("{");
         while !self.is_op(0, "}") && !self.at_eof() {
             let t = self.peek(0);
+            let is_prim_kw = t.kind == TokenKind::Keyword && is_type_name(t.text);
             if t.kind == TokenKind::Keyword && t.text == "void" {
                 self.next();
                 let name = self.expect_id();
@@ -261,7 +262,7 @@ impl<'a> Parser<'a> {
                 self.expect_op(";");
                 continue;
             }
-            if t.kind == TokenKind::Ident {
+            if t.kind == TokenKind::Ident || is_prim_kw {
                 let ty0 = self.next().text.to_string();
                 let mut ty = ty0.clone();
                 let is_arr = self.eat_arr_suffix(&mut ty);
@@ -310,7 +311,7 @@ impl<'a> Parser<'a> {
             let (ret, name) = if t.kind == TokenKind::Keyword && t.text == "void" {
                 self.next();
                 ("void".to_string(), self.expect_id())
-            } else if t.kind == TokenKind::Ident && is_type_name(t.text) {
+            } else if (t.kind == TokenKind::Ident || t.kind == TokenKind::Keyword) && is_type_name(t.text) {
                 let mut ty = self.next().text.to_string();
                 self.eat_arr_suffix(&mut ty);
                 (ty, self.expect_id())
@@ -371,7 +372,7 @@ impl<'a> Parser<'a> {
                 (None, None)
             };
             let t = self.peek(0);
-            if t.kind == TokenKind::Ident {
+            if t.kind == TokenKind::Ident || (t.kind == TokenKind::Keyword && t.text != "program") {
                 let name = self.next().text.to_string();
                 let mut ty = String::new();
                 let mut is_arr = false;
@@ -379,8 +380,9 @@ impl<'a> Parser<'a> {
                     self.expect_op("]");
                     is_arr = true;
                 }
-                // 参数类型：基类型或任意标识符（流名/类名/泛型 T）——标准：只接受标识符
-                if self.peek(0).kind == TokenKind::Ident {
+                // 参数类型：基类型关键字（int/string/...）或任意标识符（流名/类名/泛型 T）
+                if self.peek(0).kind == TokenKind::Ident
+                    || (self.peek(0).kind == TokenKind::Keyword && is_type_name(self.peek(0).text)) {
                     ty = self.next().text.to_string();
                     if self.eat_op("[") {
                         self.expect_op("]");
@@ -516,13 +518,23 @@ impl<'a> Parser<'a> {
                 target: AssignTarget::Var(name), op: "=".into(), value,
             };
         }
-        // 基类型声明 `int x = e;` / `int[] a = e;` 由 parse_ident_stmt 处理
-        // （int/string 等是普通标识符，非关键字——旧标准词法）
+        // 基类型声明：`int x = e;` / `int[] a = e;` / `string s;`（类型是关键字）
+        if self.peek(0).kind == TokenKind::Keyword && is_type_name(self.peek(0).text) {
+            let mut ty = self.next().text.to_string();
+            self.eat_arr_suffix(&mut ty);
+            let name = self.expect_id();
+            let value = if self.eat_op("=") { self.parse_expr() } else { Expr::Int(0) };
+            self.expect_op(";");
+            return Stmt::Assign {
+                vtype: Some(ty), is_const: false, is_thread: false,
+                target: AssignTarget::Var(name), op: "=".into(), value,
+            };
+        }
         if self.is_op(0, "&") {
             return self.parse_ref_decl();
         }
-        // 标识符开头的语句（含 this:: 属性赋值/方法调用；this 是普通标识符）
-        if self.peek(0).kind == TokenKind::Ident {
+        // this:: 开头的语句（this 是关键字）：属性赋值/方法调用
+        if self.peek(0).kind == TokenKind::Ident || self.at_kw("this") {
             return self.parse_ident_stmt();
         }
         self.error(format!("无法解析语句 '{}'", self.peek(0).text));
@@ -745,12 +757,13 @@ impl<'a> Parser<'a> {
             if t.kind != TokenKind::Op {
                 break;
             }
-            // 优先级表（标准：算术 > 比较；旧 C parse_expr 不支持 && ||）
             let (bp, op) = match t.text {
-                "==" | "!=" => (1, t.text),
-                "<" | ">" | "<=" | ">=" => (2, t.text),
-                "+" | "-" => (3, t.text),
-                "*" | "/" | "%" => (4, t.text),
+                "||" => (1, "||"),
+                "&&" => (2, "&&"),
+                "==" | "!=" => (3, t.text),
+                "<" | ">" | "<=" | ">=" => (4, t.text),
+                "+" | "-" => (5, t.text),
+                "*" | "/" | "%" => (6, t.text),
                 _ => break,
             };
             if bp < min_bp {
@@ -793,9 +806,13 @@ impl<'a> Parser<'a> {
                 self.next();
                 self.parse_prop_chain(Expr::Char(decode_char(t.text)))
             }
-            TokenKind::Keyword if t.text == "new" => {
-                // new Type[expr] → 数组字面量；new Class(args) → Obj::new
+            TokenKind::Keyword if t.text == "true" || t.text == "false" => {
                 self.next();
+                self.parse_prop_chain(Expr::Bool(t.text == "true"))
+            }
+            TokenKind::Keyword if t.text == "new" => {
+                self.next();
+                // new Type[expr] → 数组字面量；new Class(args) → Obj::new
                 let cls = self.expect_id();
                 if self.eat_op("[") {
                     let size = self.parse_expr();
@@ -814,28 +831,44 @@ impl<'a> Parser<'a> {
                     self.parse_prop_chain(Expr::New { cls, args })
                 }
             }
-            TokenKind::Keyword if t.text == "cause" => {
-                // 前缀解包：cause X（标准：cause 是关键字，无条件前缀）
+            TokenKind::Keyword if t.text == "get" || t.text == "cause" => {
+                // 前缀解包：get/cause X；`get(...)`/`cause(...)` 是裸调用（方法名 get/cause）
                 let op = t.text;
+                if self.is_op(1, "(") {
+                    self.next();
+                    self.next(); // (
+                    let mut args = Vec::new();
+                    while !self.is_op(0, ")") && !self.at_eof() {
+                        args.push(self.parse_expr());
+                        if !self.eat_op(",") {
+                            break;
+                        }
+                    }
+                    self.expect_op(")");
+                    self.parse_prop_chain(Expr::Call { qual: None, name: op.to_string(), args })
+                } else {
+                    let is_prefix = !(self.is_op(1, "::") || self.is_op(1, ".") || self.is_op(1, "["));
+                    if is_prefix {
+                        self.next();
+                        let l = self.parse_unary();
+                        self.parse_prop_chain(Expr::Unwrap { op: op.to_string(), l: Box::new(l) })
+                    } else {
+                        // get 作普通标识符（变量名等）
+                        self.next();
+                        self.parse_prop_chain(Expr::Var(op.to_string()))
+                    }
+                }
+            }
+            TokenKind::Keyword if t.text == "this" => {
                 self.next();
-                let l = self.parse_primary();
-                self.parse_prop_chain(Expr::Unwrap { op: op.to_string(), l: Box::new(l) })
+                self.parse_prop_chain(Expr::Var("this".to_string()))
             }
             TokenKind::Keyword => {
-                // 其它关键字不能出现在表达式位置（标准行为：报错）
-                self.error(format!("无法解析表达式 '{}'", t.text));
                 self.next();
-                Expr::Int(0)
+                self.parse_prop_chain(Expr::Var(t.text.to_string()))
             }
             TokenKind::Ident => {
                 let name = self.next().text.to_string();
-                // get 前缀解包（标准：get 是普通标识符，后跟非 ( :: . [ 时解包）
-                if name == "get"
-                    && !(self.is_op(0, "(") || self.is_op(0, "::")
-                         || self.is_op(0, ".") || self.is_op(0, "[")) {
-                    let l = self.parse_primary();
-                    return self.parse_prop_chain(Expr::Unwrap { op: "get".into(), l: Box::new(l) });
-                }
                 if self.eat_op("::") {
                     let mname = self.expect_method_name();
                     if self.is_op(0, "(") {
@@ -857,7 +890,7 @@ impl<'a> Parser<'a> {
                         })
                     }
                 } else if self.is_op(0, "(") {
-                    // 裸调用（含 get(...)/cause(...) 方法名场景）
+                    // 裸调用
                     self.next();
                     let mut args = Vec::new();
                     while !self.is_op(0, ")") && !self.at_eof() {
@@ -883,6 +916,12 @@ impl<'a> Parser<'a> {
                 let e = self.parse_expr();
                 self.expect_op(")");
                 self.parse_prop_chain(e)
+            }
+            TokenKind::Op if t.text == "-" => {
+                // 一元负号（宽松支持；语法面未见，作扩展）
+                self.next();
+                let e = self.parse_unary();
+                Expr::BinOp { op: "-".into(), l: Box::new(Expr::Int(0)), r: Box::new(e) }
             }
             _ => {
                 self.error(format!("无法解析表达式 '{}'", t.text));

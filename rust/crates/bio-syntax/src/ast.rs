@@ -110,6 +110,7 @@ pub enum Expr {
     Float(f64),
     Str(String),
     Char(u8),
+    Bool(bool),
     /// 变量引用（含 `this`）
     Var(String),
     /// `qual::name(args)`（qual=Some）或裸调用 `name(args)`（qual=None）
