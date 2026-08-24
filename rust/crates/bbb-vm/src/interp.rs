@@ -90,7 +90,7 @@ pub struct Interp {
     pub threads: Vec<ThreadTask>, // 协作线程任务（顺序 join 式）
     pub thread_seq: u32,
     pub running_thread: Option<u32>, // Threads::self()
-    pub open_libs: Vec<*mut core::ffi::c_void>, // dlopen 句柄
+    pub open_libs: Vec<(String, crate::dylib::LibHandle)>, // 已加载库：声明名 → 句柄
     pub pending_ref_perm: Option<String>,
     pub pending_ref_follow: Option<String>,
 }
@@ -468,6 +468,14 @@ impl Interp {
             }
             // 流名
             if let Some(def) = self.reg.resolve_qual(q).cloned() {
+                // StreamBin：库方法优先 dl（签名成员 = 声明导出符号，无 Bio 体）
+                if let Some(lib) = def.bin_file.clone() {
+                    // 带 body 的 Bio 方法仍走 Bio 执行
+                    let has_body = def.methods.get(name).map(|m| !m.body.is_empty()).unwrap_or(false);
+                    if !has_body {
+                        return self.dl_call(&lib, name, args);
+                    }
+                }
                 if let Some(m) = def.methods.get(name).cloned() {
                     // @onlyread：@write 注解方法拒绝（15）
                     if def.annos.contains(&"onlyread".to_string())
@@ -676,32 +684,27 @@ impl Interp {
 
     /// dlopen 调用导出符号（double fn(double...) -> double，14 用）。
     pub fn dl_call(&mut self, lib: &str, sym: &str, args: Vec<Value>) -> Outcome {
-        use std::ffi::CString;
-        let cpath = CString::new(lib).unwrap_or_default();
-        unsafe {
-            extern "C" {
-                fn dlopen(path: *const i8, mode: i32) -> *mut core::ffi::c_void;
-                fn dlsym(h: *mut core::ffi::c_void, sym: *const i8) -> *mut core::ffi::c_void;
-            }
-            let mut handle = std::ptr::null_mut();
-            for h in &self.open_libs {
-                handle = *h;
-            }
-            if handle.is_null() {
-                handle = dlopen(cpath.as_ptr(), 1); // RTLD_LAZY
-                if !handle.is_null() {
-                    self.open_libs.push(handle);
+        // 已加载缓存：声明名 → 句柄（多库独立，不串）
+        let cached = self.open_libs.iter().find(|(name, _)| name == lib).map(|(_, h)| *h);
+        let handle = match cached {
+            Some(h) => h,
+            None => {
+                match crate::dylib::open_any(lib) {
+                    Some(h) => {
+                        self.open_libs.push((lib.to_string(), h));
+                        h
+                    }
+                    None => {
+                        return self.cause(&format!("cannot open library {lib}"));
+                    }
                 }
             }
-            if handle.is_null() {
-                return self.cause(&format!("cannot open library {lib}"));
-            }
-            let csym = CString::new(sym).unwrap_or_default();
-            let fptr = dlsym(handle, csym.as_ptr());
-            if fptr.is_null() {
-                return self.cause(&format!("stream {lib} refuses: no symbol {sym}"));
-            }
-            let nums: Vec<f64> = args.iter().map(|a| a.as_int_or_num()).collect();
+        };
+        let Some(fptr) = crate::dylib::symbol(handle, sym) else {
+            return self.cause(&format!("stream {lib} refuses: no symbol {sym}"));
+        };
+        let nums: Vec<f64> = args.iter().map(|a| a.as_int_or_num()).collect();
+        unsafe {
             let result: f64 = match nums.len() {
                 0 => std::mem::transmute::<*mut core::ffi::c_void, fn() -> f64>(fptr)(),
                 1 => std::mem::transmute::<*mut core::ffi::c_void, fn(f64) -> f64>(fptr)(nums[0]),

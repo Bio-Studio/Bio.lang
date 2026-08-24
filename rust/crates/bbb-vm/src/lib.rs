@@ -10,6 +10,7 @@
 //! - 控制流：Flow 枚举（Next/Ret/Break/Continue）驱动语句块。
 
 pub mod builtin;
+pub mod dylib;
 pub mod interp;
 pub mod project;
 pub mod registry;
