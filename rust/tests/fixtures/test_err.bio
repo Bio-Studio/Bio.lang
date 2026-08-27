@@ -1,1 +1,0 @@
-program main; Main { void exec() { int x = ; } }

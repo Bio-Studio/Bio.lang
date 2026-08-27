@@ -1,8 +1,0 @@
-[package]
-name = "bbb-syntax"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-description = "BiuBiuBiu 语法层：手写 AST + 词法器 + 解析器"
-
-[dependencies]
